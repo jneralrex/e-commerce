@@ -16,8 +16,12 @@ router.post("/reset-password", resetPassword);          // Reset password
 router.put("/change-password", authenticate, changePassword);        // Reset password
 router.post("/request-delete", authenticate, requestDeleteAccount);        // Request delete account
 router.post("/confirm-delete", authenticate, confirmDeleteAccount);        // Confirm delete account
-
-
+router.get("/test", (req, res) => {
+  res.json({
+    success: true,
+    message: "Auth routes are working"
+  });
+});
 
 
 
