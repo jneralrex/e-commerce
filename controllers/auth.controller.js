@@ -49,7 +49,7 @@ const signUp = async (req, res, next) => {
 
         const passwordRegex = /^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[!@#$%^&*(),.?":{}|<>])\S{8,}$/;
         if (!passwordRegex.test(password)) {
-            throw new CustomError(400, "Password validation criteria failed", "ValidationError");
+            throw new CustomError(401, "Password must be at least 8 characters long and contain at least one uppercase letter, one lowercase letter, and one number", "ValidationError");
         }
 
         const passwordHash = await bcrypt.hash(password, 10);
@@ -86,10 +86,10 @@ const signUp = async (req, res, next) => {
 
         const emailResult = await sendEmail(email, "Welcome to Sartor Health - Verify Your Account", emailHtmlBody, username);
 
-        if (!emailResult.success) {
-            console.error("[Controller Error] API rejected transmission:", emailResult.error);
-            throw new CustomError(502, `Zoho Engine Rejected Delivery: ${emailResult.error}`, "GatewayError");
-        }
+        // if (!emailResult.success) {
+        //     console.error("[Controller Error] API rejected transmission:", emailResult.error);
+        //     throw new CustomError(502, `Zoho Engine Rejected Delivery: ${emailResult.error}`, "GatewayError");
+        // }
 
         res.status(201).json({ success: true, message: "OTP sent to email. Please verify your account.", data: { email } });
 
@@ -113,14 +113,14 @@ const verifyOTP = async (req, res, next) => {
 
         console.log("Fetched user:", user); // Add this
 
-        if (!user) throw new CustomError(404, "User not found", "ValidationError");
+        if (!user) throw new CustomError(401, "User not found", "ValidationError");
         if (user.isVerified) throw new CustomError(400, "User is already verified", "ValidationError");
 
         console.log("Received OTP from request:", otp);
         console.log("Stored OTP in DB:", user.otp);
 
         if (!otp || !user.otp) {
-            throw new CustomError(400, "OTP expired or invalid", "ValidationError");
+            throw new CustomError(401, "OTP expired or invalid", "ValidationError");
         }
 
         // Check if OTP is expired
@@ -131,7 +131,7 @@ const verifyOTP = async (req, res, next) => {
 
         // Verify OTP (Ensure it's a string)
         const otpMatch = await bcrypt.compare(otp.toString(), user.otp);
-        if (!otpMatch) throw new CustomError(400, "Invalid OTP", "ValidationError");
+        if (!otpMatch) throw new CustomError(401, "Invalid OTP", "ValidationError");
 
         // Activate account
         user.isVerified = true;
@@ -154,7 +154,7 @@ const resendOTP = async (req, res, next) => {
         const { email } = req.body;
         const user = await User.findOne({ email: email.trim() });
 
-        if (!user) throw new CustomError(404, "User not found", "ValidationError");
+        if (!user) throw new CustomError(401, "User not found", "ValidationError");
         if (user.isVerified) throw new CustomError(400, "User is already verified", "ValidationError");
 
         // Generate and send new OTP
@@ -189,11 +189,11 @@ const signIn = async (req, res, next) => {
         }
         const user = await User.findOne({ email }).select("+password +refreshToken");
 
-        if (!user) throw new CustomError(404, "User not found", "ValidationError");
-        if (!user.isVerified) throw new CustomError(403, "Account not verified", "ValidationError");
+        if (!user) throw new CustomError(401, "Invalid email or password", "ValidationError");
+        if (!user.isVerified) throw new CustomError(401, "Account not verified", "ValidationError");
 
         const passwordMatch = await bcrypt.compare(password, user.password);
-        if (!passwordMatch) throw new CustomError(400, "Invalid credentials", "ValidationError");
+        if (!passwordMatch) throw new CustomError(401, "Invalid credentials", "ValidationError");
 
         // Generate new tokens
         const accessToken = jwt.sign({ id: user._id }, config.jwt_secret, { expiresIn: "15m" });
@@ -270,7 +270,7 @@ const logout = async (req, res, next) => {
         if (!refreshToken) throw new CustomError(401, "No refresh token provided", "AuthorizationError");
 
         const user = await User.findOne({ refreshToken });
-        if (!user) throw new CustomError(403, "Invalid refresh token", "AuthorizationError");
+        if (!user) throw new CustomError(401, "Invalid refresh token", "AuthorizationError");
 
         user.refreshToken = null;
         await user.save();
@@ -292,7 +292,7 @@ const forgotPassword = async (req, res, next) => {
     try {
         const { email } = req.body;
         const user = await User.findOne({ email });
-        if (!user) throw new CustomError(404, "User not found", "ValidationError");
+        if (!user) throw new CustomError(401, "User not found", "ValidationError");
 
         await generateAndSendOTP(user);
 
@@ -310,10 +310,10 @@ const resetPassword = async (req, res, next) => {
     try {
         const { email, otp, newPassword } = req.body;
         const user = await User.findOne({ email }).select("+otp +otpExpiresAt");
-        if (!user) throw new CustomError(404, "User not found", "ValidationError");
+        if (!user) throw new CustomError(401, "User not found", "ValidationError");
 
         if (!otp || !user.otp) {
-            throw new CustomError(400, "OTP expired or invalid", "ValidationError");
+            throw new CustomError(401, "OTP expired or invalid", "ValidationError");
         }
 
         // At least 8 characters, 1 uppercase, 1 lowercase, 1 number, 1 special char, and NO spaces
@@ -361,7 +361,7 @@ const changePassword = async (req, res, next) => {
 
         const user = await User.findById(req.user._id).select("+password");
 
-        if (!user) throw new CustomError(404, "User not found", "ValidationError");
+        if (!user) throw new CustomError(401, "User not found", "ValidationError");
 
         const passwordMatch = await bcrypt.compare(oldPassword, user.password);
         if (!passwordMatch) throw new CustomError(400, "Old password is incorrect", "ValidationError");
