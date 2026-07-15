@@ -1,0 +1,47 @@
+{
+    "name": "e-commerce-api",
+    "version": "1.0.0",
+    "description": " E-commerce API built with Node.js, Express, and MongoDB",
+    "main": "server.js",
+    "directories": {
+        "test": "test"
+    },
+    "scripts": {
+        "test": "echo \"Error: no test specified\" && exit 1",
+        "dev": "nodemon server.js",
+        "start": "nodemon server.js"
+    },
+    "keywords": [
+        "e-commerce",
+        "api",
+        "nodejs",
+        "express",
+        "mongodb"
+    ],
+    "author": "e-commerce-api",
+    "license": "UNLICENSED",
+    "dependencies": {
+        "amqplib": "^0.10.7",
+        "axios": "^1.8.4",
+        "bcryptjs": "^3.0.2",
+        "cloudinary": "^1.41.3",
+        "cookie-parser": "^1.4.7",
+        "cors": "^2.8.5",
+        "dotenv": "^16.4.7",
+        "express": "^4.21.2",
+        "express-async-handler": "^1.2.0",
+        "helmet": "^8.1.0",
+        "jsonwebtoken": "^9.0.2",
+        "mongodb": "^6.15.0",
+        "mongoose": "^8.12.2",
+        "multer": "^1.4.5-lts.2",
+        "multer-storage-cloudinary": "^4.0.0",
+        "nanoid": "^5.1.5",
+        "node-cron": "^4.2.1",
+        "nodemailer": "^6.10.0",
+        "nodemon": "^3.1.9",
+        "slugify": "^1.6.6",
+        "stripe": "^18.4.0",
+        "zeptomail": "^8.0.1"
+    }
+}
