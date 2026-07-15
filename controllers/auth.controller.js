@@ -45,7 +45,7 @@ const signUp = async (req, res, next) => {
         const { username, email, password } = req.body;
 
         const existingUser = await User.findOne({ email }).exec();
-        if (existingUser) throw new CustomError(400, "User already exists", "ValidationError");
+        if (existingUser) throw new CustomError(400, "User already exists", "AuthenticationError");
 
         const passwordRegex = /^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[!@#$%^&*(),.?":{}|<>])\S{8,}$/;
         if (!passwordRegex.test(password)) {
@@ -113,14 +113,14 @@ const verifyOTP = async (req, res, next) => {
 
         console.log("Fetched user:", user); // Add this
 
-        if (!user) throw new CustomError(401, "User not found", "ValidationError");
+        if (!user) throw new CustomError(401, "User not found", "AuthenticationError");
         if (user.isVerified) throw new CustomError(400, "User is already verified", "ValidationError");
 
         console.log("Received OTP from request:", otp);
         console.log("Stored OTP in DB:", user.otp);
 
         if (!otp || !user.otp) {
-            throw new CustomError(401, "OTP expired or invalid", "ValidationError");
+            throw new CustomError(401, "OTP expired or invalid", "AuthenticationError");
         }
 
         // Check if OTP is expired
@@ -131,7 +131,7 @@ const verifyOTP = async (req, res, next) => {
 
         // Verify OTP (Ensure it's a string)
         const otpMatch = await bcrypt.compare(otp.toString(), user.otp);
-        if (!otpMatch) throw new CustomError(401, "Invalid OTP", "ValidationError");
+        if (!otpMatch) throw new CustomError(401, "Invalid OTP", "AuthenticationError");
 
         // Activate account
         user.isVerified = true;
@@ -174,26 +174,26 @@ const signIn = async (req, res, next) => {
     try {
         const { email, password } = req.body;
 
-        if (!email && !password) throw new CustomError(400, "Email and password are required", "ValidationError");
-        if (!email) throw new CustomError(400, "Email is required", "ValidationError");
-        if (!password) throw new CustomError(400, "Password is required", "ValidationError");
+        if (!email && !password) throw new CustomError(400, "Email and password are required", "AuthenticationError");
+        if (!email) throw new CustomError(400, "Email is required", "AuthenticationError");
+        if (!password) throw new CustomError(400, "Password is required", "AuthenticationError");
         const passwordRegex = /^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[!@#$%^&*(),.?":{}|<>])\S{8,}$/;
         if (!passwordRegex.test(password)) {
             throw new CustomError(400, "Password must be at least 8 characters long and contain at least one uppercase letter, one lowercase letter, and one number", "ValidationError");
         }
         if (!email || !password) {
-            throw new CustomError(400, "All fields are required", "ValidationError");
+            throw new CustomError(400, "All fields are required", "AuthenticationError");
         }
         if (!email.match(/^\S+@\S+\.\S+$/)) {
             throw new CustomError(400, "Invalid email format", "ValidationError");
         }
         const user = await User.findOne({ email }).select("+password +refreshToken");
 
-        if (!user) throw new CustomError(401, "Invalid email or password", "ValidationError");
-        if (!user.isVerified) throw new CustomError(401, "Account not verified", "ValidationError");
+        if (!user) throw new CustomError(401, "Invalid email or password", "AuthenticationError");
+        if (!user.isVerified) throw new CustomError(401, "Account not verified", "AuthenticationError");
 
         const passwordMatch = await bcrypt.compare(password, user.password);
-        if (!passwordMatch) throw new CustomError(401, "Invalid credentials", "ValidationError");
+        if (!passwordMatch) throw new CustomError(401, "Invalid credentials", "AuthenticationError");
 
         // Generate new tokens
         const accessToken = jwt.sign({ id: user._id }, config.jwt_secret, { expiresIn: "15m" });
