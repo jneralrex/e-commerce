@@ -1,14 +1,10 @@
+const Product = require("../models/product.model");
+const CustomError = require("../utils/errors/customErrors");
+const slugify = require("slugify");
 
 
 // @desc Create new product
 // @route POST /api/products
-
-const Product = require("../models/product.model");
-const CustomError = require("../utils/errorHandler");
-const slugify = require("slugify");
-
-
-// @access Private (seller/admin)
 const createProduct = async (req, res, next) => {
   try {
     const {

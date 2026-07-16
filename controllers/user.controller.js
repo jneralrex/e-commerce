@@ -1,6 +1,6 @@
 const { cloudinary } = require("../config/config");
 const User = require("../models/user.model");
-const CustomError = require("../utils/errorHandler");
+const CustomError = require("../utils/errors/customErrors");
 
 const getAllUsers = async (req, res, next) => {
     try {

@@ -1,6 +1,6 @@
 const Cart = require("../models/cart.model");
 const Order = require("../models/order.model");
-const CustomError = require("../utils/errorHandler");
+const CustomError = require("../utils/errors/customErrors");
 
 const createOrder = async (req, res, next) => {
     try {

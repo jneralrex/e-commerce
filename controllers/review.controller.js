@@ -1,6 +1,6 @@
 const Product = require("../models/product.model");
 const Review = require("../models/review.model");
-const CustomError = require("../utils/errorHandler");
+const CustomError = require("../utils/errors/customErrors");
 
 const createReview = async (req, res, next) => {
   try {

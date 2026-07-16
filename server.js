@@ -4,6 +4,7 @@ const connectDataBase = require("./config/dbConnect");
 const cors = require("cors");
 const cookieParser = require("cookie-parser");
 const helmet = require("helmet");
+const errorHandler = require("./utils/errors/errorHandler");
 
 const authRoutes = require("./routes/auth.routes");
 const userRoutes = require("./routes/user.routes");
@@ -65,64 +66,13 @@ app.use("/api/v1/orders", orderRoutes);
 app.use("/api/v1/products", productRoutes);
 app.use("/api/v1/stripe", webhookRoutes);
 
-// ================================
-// Global Error Handler
-// ================================
-app.use((err, req, res, next) => {
-  let statusCode = err.statusCode || 500;
-  let message = err.message || "Internal Server Error";
-  let type = err.type || err.name || "GenericError";
-  let details = err.details || null;
-
-  // Mongoose Validation Error
-  if (err.name === "ValidationError") {
-    statusCode = 400;
-    type = "ValidationError";
-    message = Object.values(err.errors)
-      .map((val) => val.message)
-      .join(", ");
-  }
-
-  // Duplicate Key Error
-  if (err.code === 11000) {
-    statusCode = 409;
-    type = "DuplicateKeyError";
-    message = "Duplicate value entered.";
-    details = err.keyValue;
-  }
-
-  // MongoDB Error
-  if (err.name === "MongoError") {
-    statusCode = 500;
-    type = "DatabaseError";
-    message = "Database error occurred.";
-  }
-
-  // Connection Timeout
-  if (err.name === "ConnectionTimeout") {
-    statusCode = 408;
-    type = "ConnectionTimeout";
-    message = "Connection timeout.";
-  }
-
-  // Log errors
-  console.error("========================================");
-  console.error("Error:", err);
-  console.error("========================================");
-
-  res.status(statusCode).json({
-    success: false,
-    statusCode,
-    message,
-    type,
-    details,
-
-    // Only include stack trace in development
-    ...(process.env.NODE_ENV === "development" && {
-      stack: err.stack,
-    }),
-  });
+// Health check
+app.get("/api/v1/health", (req, res) => {
+  res.status(200).json({ success: true, message: "Server is healthy" });
 });
+
+// Global Error Handler
+app.use(errorHandler);
 
 // ================================
 // Start Server

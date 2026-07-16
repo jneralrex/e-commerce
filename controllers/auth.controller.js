@@ -1,5 +1,5 @@
 const User = require("../models/user.model");
-const CustomError = require("../utils/errorHandler");
+const CustomError = require("../utils/errors/customErrors");
 const bcrypt = require("bcryptjs");
 const jwt = require("jsonwebtoken");
 const { config } = require("../config/config");

@@ -1,6 +1,6 @@
 const Cart = require("../models/cart.model");
 const Product = require("../models/product.model");
-const CustomError = require("../utils/errorHandler");
+const CustomError = require("../utils/errors/customErrors");
 
 // Add item to cart
 const addToCart = async (req, res, next) => {

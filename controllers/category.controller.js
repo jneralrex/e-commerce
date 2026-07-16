@@ -1,7 +1,7 @@
 const { cloudinary } = require("../config/config");
 const Category = require("../models/category.model");
 const Product = require("../models/product.model");
-const CustomError = require("../utils/errorHandler");
+const CustomError = require("../utils/errors/customErrors");
 const slugify = require("slugify");
 
 const createCategory = async (req, res, next) => {
