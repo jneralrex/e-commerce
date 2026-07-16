@@ -1,6 +1,6 @@
 const jwt = require("jsonwebtoken");
 const { config } = require("../config/config");
-const CustomError = require("./errorHandler");
+const CustomError = require("../utils/errors/customErrors");
 const User = require("../models/user.model");
 
 const authenticate = async (req, res, next) => {
