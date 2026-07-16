@@ -86,10 +86,6 @@ const signUp = async (req, res, next) => {
 
         const emailResult = await sendEmail(email, "Welcome to Sartor Health - Verify Your Account", emailHtmlBody, username);
 
-        // if (!emailResult.success) {
-        //     console.error("[Controller Error] API rejected transmission:", emailResult.error);
-        //     throw new CustomError(502, `Zoho Engine Rejected Delivery: ${emailResult.error}`, "GatewayError");
-        // }
 
         res.status(201).json({ success: true, message: "OTP sent to email. Please verify your account.", data: { email } });
 
@@ -174,18 +170,18 @@ const signIn = async (req, res, next) => {
     try {
         const { email, password } = req.body;
 
-        if (!email && !password) throw new CustomError(400, "Email and password are required", "AuthenticationError");
-        if (!email) throw new CustomError(400, "Email is required", "AuthenticationError");
-        if (!password) throw new CustomError(400, "Password is required", "AuthenticationError");
+        if (!email && !password) throw new CustomError(401, "Invalid email or password", "AuthenticationError");
+        if (!email) throw new CustomError(401, "Invalid email or password", "AuthenticationError");
+        if (!password) throw new CustomError(401, "Invalid email or password", "AuthenticationError");
         const passwordRegex = /^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[!@#$%^&*(),.?":{}|<>])\S{8,}$/;
         if (!passwordRegex.test(password)) {
-            throw new CustomError(400, "Password must be at least 8 characters long and contain at least one uppercase letter, one lowercase letter, and one number", "ValidationError");
+            throw new CustomError(401, "Invalid email or password", "AuthenticationError");
         }
         if (!email || !password) {
-            throw new CustomError(400, "All fields are required", "AuthenticationError");
+            throw new CustomError(401, "Invalid email or password", "AuthenticationError");
         }
         if (!email.match(/^\S+@\S+\.\S+$/)) {
-            throw new CustomError(400, "Invalid email format", "ValidationError");
+            throw new CustomError(401, "Invalid email or password", "AuthenticationError");
         }
         const user = await User.findOne({ email }).select("+password +refreshToken");
 
@@ -193,7 +189,7 @@ const signIn = async (req, res, next) => {
         if (!user.isVerified) throw new CustomError(401, "Account not verified", "AuthenticationError");
 
         const passwordMatch = await bcrypt.compare(password, user.password);
-        if (!passwordMatch) throw new CustomError(401, "Invalid credentials", "AuthenticationError");
+        if (!passwordMatch) throw new CustomError(401, "Invalid email or password", "AuthenticationError");
 
         // Generate new tokens
         const accessToken = jwt.sign({ id: user._id }, config.jwt_secret, { expiresIn: "15m" });
