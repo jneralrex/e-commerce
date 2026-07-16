@@ -1,4 +1,4 @@
-const CustomError = require("./errorHandler");
+const CustomError = require("../utils/errors/customErrors");
 
 const authorize = (...allowedRoles) => {
   return (req, res, next) => {
