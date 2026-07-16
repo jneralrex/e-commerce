@@ -13,6 +13,11 @@ module.exports = (err, req, res, next) => {
       message = Object.values(err.errors).map(val => val.message).join(", ");
     }
 
+    if (err.name === "AuthenticationError") {
+      statusCode = 401;
+      message = Object.values(err.errors).map(val => val.message).join(", ");
+    }
+
     if (err.code === 11000) {
       statusCode = 400;
       message = "Duplicate value entered.";
