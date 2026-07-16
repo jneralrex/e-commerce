@@ -170,26 +170,26 @@ const signIn = async (req, res, next) => {
     try {
         const { email, password } = req.body;
 
-        if (!email && !password) throw new CustomError(401, "Invalid email or password", "AuthenticationError");
-        if (!email) throw new CustomError(401, "Invalid email or password", "AuthenticationError");
-        if (!password) throw new CustomError(401, "Invalid email or password", "AuthenticationError");
+        if (!email && !password) throw new CustomError(400, "Invalid email or password", "AuthenticationError");
+        if (!email) throw new CustomError(400, "Invalid email or password", "AuthenticationError");
+        if (!password) throw new CustomError(400, "Invalid email or password", "AuthenticationError");
         const passwordRegex = /^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[!@#$%^&*(),.?":{}|<>])\S{8,}$/;
         if (!passwordRegex.test(password)) {
-            throw new CustomError(401, "Invalid email or password", "AuthenticationError");
+            throw new CustomError(400, "Invalid email or password", "AuthenticationError");
         }
         if (!email || !password) {
-            throw new CustomError(401, "Invalid email or password", "AuthenticationError");
+            throw new CustomError(400, "Invalid email or password", "AuthenticationError");
         }
         if (!email.match(/^\S+@\S+\.\S+$/)) {
-            throw new CustomError(401, "Invalid email or password", "AuthenticationError");
+            throw new CustomError(400, "Invalid email or password", "AuthenticationError");
         }
         const user = await User.findOne({ email }).select("+password +refreshToken");
 
         if (!user) throw new CustomError(401, "Invalid email or password", "AuthenticationError");
-        if (!user.isVerified) throw new CustomError(401, "Account not verified", "AuthenticationError");
+        if (!user.isVerified) throw new CustomError(400, "Account not verified", "AuthenticationError");
 
         const passwordMatch = await bcrypt.compare(password, user.password);
-        if (!passwordMatch) throw new CustomError(401, "Invalid email or password", "AuthenticationError");
+        if (!passwordMatch) throw new CustomError(400, "Invalid email or password", "AuthenticationError");
 
         // Generate new tokens
         const accessToken = jwt.sign({ id: user._id }, config.jwt_secret, { expiresIn: "15m" });
