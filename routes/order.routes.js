@@ -4,7 +4,7 @@ const router = express.Router();
 const authenticate = require("../utils/authenticate");
 const authorize = require("../utils/authorize");
 const {   createOrder,
-    getUserOrders,
+    // getUserOrders,
     getSingleOrder,
     markOrderAsPaid,
     updateOrderStatus,
@@ -28,7 +28,7 @@ router.put("/:orderId/paid", authenticate, markOrderAsPaid);
 router.put("/:orderId/delivered", authenticate, authorize("admin"), updateOrderStatus);
 
 // ----- Admin routes -----
-router.get("/admin/all", authenticate, authorize("admin"), getUserOrders); // all orders
+// router.get("/admin/all", authenticate, authorize("admin"), getUserOrders); // all orders
 router.get("/admin/filter", authenticate, authorize("admin"), filterOrders);
 router.put("/admin/:id/cancel", authenticate, authorize("admin"), adminCancelOrder);
 router.get("/admin/analytics", authenticate, authorize("admin"), getAnalytics);

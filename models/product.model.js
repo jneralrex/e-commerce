@@ -8,14 +8,26 @@ const productSchema = new mongoose.Schema({
   colors: [{ type: String, required: true, trim: true }],
   sizes: [{ type: String, required: true, trim: true }],
   brand: { type: String, required: true, trim: true },
-  moq: { type: Number, required: true, min: 1 },
+  carton_size_pcs: { type: Number, required: true, min: 1 },
   model: { type: String, required: true, trim: true },
   material: { type: String, required: true, trim: true },
   weight: { type: String, required: true, trim: true },
-  price: { type: Number, required: true, min: 0 },
+  currency: {
+    type: String,
+    enum: ["NGN", "USD"],
+    default: "NGN"
+  },
+  carton_weight_kg: { type: Number, default: 0 },
+  carton_length_cm: { type: Number, default: 0 },
+  carton_width_cm: { type: Number, default: 0 },
+  carton_height_cm: { type: Number, default: 0 },
+  price_retailer_ngn: { type: Number, required: true, min: 0 },
+  price_wholesaler_ngn: { type: Number, required: true, min: 0 },
+  price_distributor_ngn: { type: Number, required: true, min: 0 },
+  price_international_usd: { type: Number, required: true, min: 0 },
   discount: { type: Number, default: 0, min: 0, max: 100 },
   category: { type: mongoose.Schema.Types.ObjectId, ref: "Category", required: true },
-  stock: { type: Number, required: true, min: 0 },
+  // stock: { type: Number, required: true, min: 0 },
   tags: [{ type: String, trim: true }],
   seller: { type: mongoose.Schema.Types.ObjectId, ref: "User", required: true },
   sku: { type: String, required: true, unique: true, trim: true },
@@ -37,7 +49,15 @@ const productSchema = new mongoose.Schema({
     }
   ],
   reviews: [{ type: mongoose.Schema.Types.ObjectId, ref: "Review" }],
-  isAvailable: { type: Boolean, default: true }
+  active: {
+    type: Boolean,
+    default: true
+  },
+
+  isAvailable: {
+    type: Boolean,
+    default: true
+  }
 }, {
   timestamps: true,
   toJSON: { virtuals: true },
@@ -52,9 +72,5 @@ productSchema.pre("save", function (next) {
   next();
 });
 
-// Virtual discounted price
-productSchema.virtual("discountedPrice").get(function () {
-  return this.price - (this.price * this.discount) / 100;
-});
 
 module.exports = mongoose.model("Product", productSchema);

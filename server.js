@@ -13,9 +13,9 @@ const categoryRoutes = require("./routes/category.routes");
 const cartRoutes = require("./routes/cart.routes");
 const orderRoutes = require("./routes/order.routes");
 const reviewRoutes = require("./routes/review.routes");
-const webhookRoutes = require("./routes/payment.routes");
+const paymentRoutes = require("./routes/payment.routes");
 
-const autoCancelUnpaidOrders = require("./utils/cleaners/product.cronJobs");
+const autoCancelUnpaidOrders = require("./utils/crons/product.cronJobs");
 
 const app = express();
 const port = config.port || 4000;
@@ -28,7 +28,8 @@ connectDataBase();
 // ================================
 // Middleware
 // ================================
-app.use("/api/stripe/webhook", express.raw({ type: "*/*" }));
+
+
 
 app.use(helmet());
 
@@ -64,7 +65,8 @@ app.use("/api/v1/reviews", reviewRoutes);
 app.use("/api/v1/categories", categoryRoutes);
 app.use("/api/v1/orders", orderRoutes);
 app.use("/api/v1/products", productRoutes);
-app.use("/api/v1/stripe", webhookRoutes);
+app.use("/api/v1/payments", paymentRoutes
+);
 
 // Health check
 app.get("/api/v1/health", (req, res) => {

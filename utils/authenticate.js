@@ -1,8 +1,7 @@
 const jwt = require("jsonwebtoken");
 const { config } = require("../config/config");
 const CustomError = require("../utils/errors/customErrors");
-const User = require("../models/user.model");
-
+const User = require("../models/user.model")
 const authenticate = async (req, res, next) => {
     try {
         const token = req.headers.authorization?.split(" ")[1]; // Extract Bearer token

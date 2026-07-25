@@ -2,69 +2,153 @@ const mongoose = require("mongoose");
 
 const userSchema = new mongoose.Schema(
   {
-    username: { type: String, required: true, unique: true, trim: true },
-    email: {
+    username: {
       type: String,
       required: true,
       unique: true,
       trim: true,
+    },
+
+    businessName: {
+      type: String,
+      trim: true,
+    },
+
+    email: {
+      type: String,
+      required: true,
+      unique: true,
       lowercase: true,
+      trim: true,
     },
+
+    password: {
+      type: String,
+      required: true,
+      select: false,
+    },
+
+    phoneNumber: {
+      type: String,
+      trim: true,
+    },
+
     profilePics: {
-      url: { type: String },
-      public_id: { type: String },
+      url: String,
+      public_id: String,
     },
-    gender: { type: String, trim: true, lowercase: true, enum: ["male", "female"] },
-    dateOfBirth: {
-      type: Date,
-      validate: {
-        validator: function (value) {
-          return value < new Date(); // Ensures DOB is in the past
-        },
-        message: "Date of birth cannot be in the future",
-      },
-    },
-    race: { type: String, trim: true, lowercase: true },
-    occupation: { type: String, trim: true, lowercase: true },
-    maritalStatus: { type: String, trim: true, lowercase: true },
-    habit: {
-      smoking: { type: String, enum: ["No", "Yes", "Occasionally"], default: "No" },
-      alcohol: { type: String, enum: ["No", "Yes", "Occasionally"], default: "No" },
-    },
-    hobbies: [{ type: String, trim: true, lowercase: true }],
-    password: { type: String, required: true, select: false },
-    otp: { type: String, select: false },
-    otpExpiresAt: { type: Date, select: false },
-    isVerified: { type: Boolean, default: false },
-    isProfileComplete: { type: Boolean, default: false },
-    isBlocked: { type: Boolean, default: false },
+
+    // ======================================================
+    // ACCOUNT TYPE
+    // ======================================================
+
     role: {
       type: String,
-      enum: ["user", "admin"],
-      default: "user"
+      enum: ["user","stockist", "admin"],
+      default: "user",
     },
 
-    refreshToken: { type: String, select: false },
+    accountTypeRequested: {
+      type: String,
+      enum: [
+        "retailer",
+        "wholesaler",
+        "distributor"
+      ]
+    },
+
+    // ======================================================
+    // DISTRIBUTOR ACCOUNT
+    // ======================================================
+
+    assignedTier: {
+      type: String,
+      enum: [
+        "retailer",
+        "wholesaler",
+        "distributor_local",
+        "distributor_international",
+      ],
+      default: null,
+    },
+
+    territory: {
+      type: String,
+      trim: true,
+      default: null,
+    },
+
+    monthlyCommitmentPcs: {
+      type: Number,
+      default: null,
+    },
+
+    status: {
+      type: String,
+      enum: [
+        "PENDING",
+        "APPROVED",
+        "SUSPENDED",
+      ],
+      default: "APPROVED",
+    },
+
+    // ======================================================
+    // AUTH
+    // ======================================================
+
+    otp: {
+      type: String,
+      select: false,
+    },
+
+    otpExpiresAt: {
+      type: Date,
+      select: false,
+    },
+
+    refreshToken: {
+      type: String,
+      select: false,
+    },
+
+    isVerified: {
+      type: Boolean,
+      default: false,
+    },
+
+    isBlocked: {
+      type: Boolean,
+      default: false,
+    },
+
+    // ======================================================
+    // DISTRIBUTOR APPLICATION
+    // ======================================================
+
+    distributorApplication: {
+      applied: {
+        type: Boolean,
+        default: false,
+      },
+
+      projectedMonthlyVolumePcs: {
+        type: Number,
+        default: null,
+      },
+
+      appliedAt: {
+        type: Date,
+      },
+
+      approvedAt: {
+        type: Date,
+      },
+    },
   },
-  { timestamps: true }
+  {
+    timestamps: true,
+  }
 );
 
-// **Pre-Save Hook to Update isProfileComplete Automatically**
-userSchema.pre("save", function (next) {
-  this.isProfileComplete =
-    !!this.username &&
-    !!this.email &&
-    !!this.profilePics?.url &&
-    !!this.gender &&
-    !!this.dateOfBirth &&
-    !!this.race &&
-    !!this.occupation &&
-    !!this.maritalStatus &&
-    !!this.habit &&
-    this.hobbies.length > 0;
-
-  next();
-});
-
-const User = mongoose.model("User", userSchema);
-module.exports = User;
+module.exports = mongoose.model("User", userSchema);

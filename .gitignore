@@ -36,6 +36,7 @@ yarn-error.log*
 # env files (can opt-in for committing if needed)
 .env*
 note.txt
+SHCL_Stockist_Portal_Dev_Spec.md
 
 
 
