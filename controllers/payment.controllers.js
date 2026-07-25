@@ -329,9 +329,10 @@ const verifyPayment = async (req, res, next) => {
 
 const paystackWebhook = async (req, res, next) => {
   console.log("========== WEBHOOK HIT ==========");
-    console.log("Headers:", req.headers);
-    console.log("Signature:", req.headers["x-paystack-signature"]);
+  console.log("Headers:", req.headers);
+  console.log("Signature:", req.headers["x-paystack-signature"]);
   try {
+    console.log("Reached step 1");
 
     const signature =
       req.headers["x-paystack-signature"];
@@ -359,9 +360,14 @@ const paystackWebhook = async (req, res, next) => {
       );
     }
 
+    console.log("Reached step 2");
+    console.log("Signature valid:", isValid);
+
     const event = JSON.parse(
       req.body.toString()
     );
+    console.log("Reached step 3");
+    console.log(event.event);
 
     const supportedEvents = [
       "charge.success",
@@ -407,6 +413,11 @@ const paystackWebhook = async (req, res, next) => {
 
     if (!payment) {
 
+      console.log("Reached step 4");
+      console.log(event.data.reference);
+      if (payment) {
+        console.log("Payment status:", payment.status);
+      }
       console.log(
         `Payment not found for ${reference}`
       );
@@ -417,7 +428,7 @@ const paystackWebhook = async (req, res, next) => {
           "Payment not found. Ignored.",
       });
     }
-
+    console.log("Reached step 5");
     switch (event.event) {
 
       case "charge.success": {
@@ -538,14 +549,15 @@ const paystackWebhook = async (req, res, next) => {
         break;
     }
 
+    console.log("Reached step 6");
     return res.status(200).json({
       success: true,
       message:
         "Webhook processed successfully.",
     });
-
   } catch (error) {
-
+    console.error("========== WEBHOOK ERROR ==========");
+    console.error(error.stack);
     next(error);
 
   }
