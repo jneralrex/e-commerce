@@ -11,6 +11,7 @@ const initializeTransaction = async ({
     amount,
     reference,
     currency = "NGN",
+    callback_url,
     metadata = {},
 }) => {
 
@@ -31,6 +32,7 @@ const initializeTransaction = async ({
                 amount,
                 reference,
                 currency,
+                callback_url,
                 metadata,
             }
         );
@@ -155,7 +157,7 @@ const verifyTransaction = async (reference) => {
             throw new CustomError(
                 error.response.status || 500,
                 error.response.data?.message ||
-                    "Payment verification failed.",
+                "Payment verification failed.",
                 "PaymentGatewayError",
                 error.response.data
             );
@@ -164,7 +166,7 @@ const verifyTransaction = async (reference) => {
         throw new CustomError(
             500,
             error.message ||
-                "Unable to reach Paystack.",
+            "Unable to reach Paystack.",
             "PaymentGatewayError"
         );
     }

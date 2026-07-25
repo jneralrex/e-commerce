@@ -11,7 +11,7 @@ const {
 const {
   initializeTransaction,
   verifyTransaction,
-  } = require("../service/paystack.service");
+} = require("../service/paystack.service");
 
 const {
   markPaymentAsPaid,
@@ -22,183 +22,174 @@ const { verifyWebhookSignature } = require("../utils/payment/webhook.helper");
 const generatePaymentReference = require("../utils/payment/payment.reference");
 
 const startPayment = async (req, res, next) => {
-    try {
+  try {
 
-        const { orderId } = req.params;
+    const { orderId } = req.params;
 
-        const order = await Order.findById(orderId);
+    const order = await Order.findById(orderId);
 
-        if (!order) {
-            throw new CustomError(
-                404,
-                "Order not found.",
-                "NotFoundError"
-            );
-        }
+    if (!order) {
+      throw new CustomError(
+        404,
+        "Order not found.",
+        "NotFoundError"
+      );
+    }
 
-        // Ensure the user owns the order
-        if (
-            order.account.toString() !==
-            req.user._id.toString()
-        ) {
-            throw new CustomError(
-                403,
-                "You are not authorized to pay for this order.",
-                "AuthorizationError"
-            );
-        }
+    // Ensure the user owns the order
+    if (
+      order.account.toString() !==
+      req.user._id.toString()
+    ) {
+      throw new CustomError(
+        403,
+        "You are not authorized to pay for this order.",
+        "AuthorizationError"
+      );
+    }
 
-        let payment = await Payment.findById(order.payment);
+    let payment = await Payment.findById(order.payment);
 
-        if (!payment) {
-            throw new CustomError(
-                404,
-                "Payment record not found.",
-                "NotFoundError"
-            );
-        }
+    if (!payment) {
+      throw new CustomError(
+        404,
+        "Payment record not found.",
+        "NotFoundError"
+      );
+    }
 
-        switch (payment.status) {
+    switch (payment.status) {
 
-            case "PAID":
-                throw new CustomError(
-                    400,
-                    "This order has already been paid.",
-                    "PaymentError"
-                );
+      case "PAID":
+        throw new CustomError(
+          400,
+          "This order has already been paid.",
+          "PaymentError"
+        );
 
-            case "PROCESSING":
-                return res.status(200).json({
-                    success: true,
-                    message: "Payment already initialized.",
-                    payment: {
-                        authorization_url:
-                            payment.authorization_url,
-                        access_code:
-                            payment.access_code,
-                        reference:
-                            payment.paystack_reference,
-                    },
-                });
-
-            case "FAILED":
-            case "ABANDONED":
-            case "REFUNDED": {
-
-                // Count previous attempts
-                const attempts =
-                    await Payment.countDocuments({
-                        order: order._id,
-                    });
-
-                // Create a fresh payment attempt
-                payment = await Payment.create({
-                    order: order._id,
-                    account: order.account,
-
-                    amount: payment.amount,
-                    currency: payment.currency,
-
-                    payment_ref:
-                        generatePaymentReference(
-                            order._id
-                        ),
-
-                    status: "PENDING",
-
-                    attempt: attempts + 1,
-                });
-
-                // Point order to the latest payment
-                order.payment = payment._id;
-
-                order.paymentStatus = "PENDING";
-
-                order.paidAt = null;
-
-                await order.save();
-
-                break;
-            }
-
-            default:
-                break;
-        }
-
-        // Initialize Paystack
-        const gateway =
-            await initializeTransaction({
-
-                email: req.user.email,
-
-                amount: toGatewayAmount(
-                    payment.amount,
-                    payment.currency
-                ),
-
-                reference:
-                    payment.payment_ref,
-
-                currency:
-                    payment.currency,
-
-                metadata: {
-                    orderId:
-                        order._id.toString(),
-
-                    paymentId:
-                        payment._id.toString(),
-
-                    customerId:
-                        req.user._id.toString(),
-
-                    attempt:
-                        payment.attempt,
-                },
-            });
-
-        payment.gateway = gateway.provider;
-
-        payment.authorization_url =
-            gateway.authorization_url;
-
-        payment.access_code =
-            gateway.access_code;
-
-        payment.paystack_reference =
-            gateway.gateway_reference;
-
-        payment.gateway_response =
-            gateway.raw;
-
-        payment.status = "PROCESSING";
-
-        await payment.save();
-
+      case "PROCESSING":
         return res.status(200).json({
-            success: true,
-            message:
-                "Payment initialized successfully.",
-            payment: {
-                authorization_url:
-                    payment.authorization_url,
-
-                access_code:
-                    payment.access_code,
-
-                reference:
-                    payment.paystack_reference,
-
-                attempt:
-                    payment.attempt,
-            },
+          success: true,
+          message: "Payment already initialized.",
+          payment: {
+            authorization_url:
+              payment.authorization_url,
+            access_code:
+              payment.access_code,
+            reference:
+              payment.paystack_reference,
+          },
         });
 
-    } catch (error) {
+      case "FAILED":
+      case "ABANDONED":
+      case "REFUNDED": {
 
-        next(error);
+        // Count previous attempts
+        const attempts =
+          await Payment.countDocuments({
+            order: order._id,
+          });
 
+        // Create a fresh payment attempt
+        payment = await Payment.create({
+          order: order._id,
+          account: order.account,
+
+          amount: payment.amount,
+          currency: payment.currency,
+
+          payment_ref:
+            generatePaymentReference(
+              order._id
+            ),
+
+          status: "PENDING",
+
+          attempt: attempts + 1,
+        });
+
+        // Point order to the latest payment
+        order.payment = payment._id;
+
+        order.paymentStatus = "PENDING";
+
+        order.paidAt = null;
+
+        await order.save();
+
+        break;
+      }
+
+      default:
+        break;
     }
+
+    // Initialize Paystack
+    const gateway = await initializeTransaction({
+      email: req.user.email,
+
+      amount: toGatewayAmount(
+        payment.amount,
+        payment.currency
+      ),
+
+      reference: payment.payment_ref,
+
+      currency: payment.currency,
+
+      callback_url:
+        process.env.PAYSTACK_CALLBACK_URL,
+
+      metadata: {
+        orderId: order._id.toString(),
+        paymentId: payment._id.toString(),
+        customerId: req.user._id.toString(),
+      },
+    });
+
+    payment.gateway = gateway.provider;
+
+    payment.authorization_url =
+      gateway.authorization_url;
+
+    payment.access_code =
+      gateway.access_code;
+
+    payment.paystack_reference =
+      gateway.gateway_reference;
+
+    payment.gateway_response =
+      gateway.raw;
+
+    payment.status = "PROCESSING";
+
+    await payment.save();
+
+    return res.status(200).json({
+      success: true,
+      message:
+        "Payment initialized successfully.",
+      payment: {
+        authorization_url:
+          payment.authorization_url,
+
+        access_code:
+          payment.access_code,
+
+        reference:
+          payment.paystack_reference,
+
+        attempt:
+          payment.attempt,
+      },
+    });
+
+  } catch (error) {
+
+    next(error);
+
+  }
 };
 
 const verifyPayment = async (req, res, next) => {
@@ -246,37 +237,37 @@ const verifyPayment = async (req, res, next) => {
     }
 
     // Amount validation
-   console.log("========== PAYMENT VALIDATION ==========");
+    console.log("========== PAYMENT VALIDATION ==========");
 
-console.log({
-    gatewayAmount: gateway.amount,
-    paymentAmount: payment.amount,
-    gatewayCurrency: gateway.currency,
-    paymentCurrency: payment.currency,
-});
+    console.log({
+      gatewayAmount: gateway.amount,
+      paymentAmount: payment.amount,
+      gatewayCurrency: gateway.currency,
+      paymentCurrency: payment.currency,
+    });
 
-console.log(
-    "Amount Match:",
-    gateway.amount === payment.amount
-);
+    console.log(
+      "Amount Match:",
+      gateway.amount === payment.amount
+    );
 
-console.log(
-    "Currency Match:",
-    gateway.currency === payment.currency
-);
+    console.log(
+      "Currency Match:",
+      gateway.currency === payment.currency
+    );
 
-console.log("========================================");
+    console.log("========================================");
 
-if (
-    gateway.amount !== payment.amount ||
-    gateway.currency !== payment.currency
-) {
-    throw new CustomError(
+    if (
+      gateway.amount !== payment.amount ||
+      gateway.currency !== payment.currency
+    ) {
+      throw new CustomError(
         400,
         "Payment amount or currency mismatch.",
         "PaymentError"
-    );
-}
+      );
+    }
 
     // Marks payment + order as paid
     const {
