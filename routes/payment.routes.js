@@ -25,11 +25,15 @@ router.get(
 
 // Paystack webhook
 // This route MUST receive the raw request body
+// router.post(
+//     "/webhook",
+//     express.raw({
+//         type: "application/json",
+//     }),
+//     paystackWebhook
+// );
 router.post(
     "/webhook",
-    express.raw({
-        type: "application/json",
-    }),
     paystackWebhook
 );
 

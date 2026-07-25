@@ -345,10 +345,20 @@ const paystackWebhook = async (req, res, next) => {
       );
     }
 
+    if (!req.rawBody) {
+
+      throw new CustomError(
+        400,
+        "Missing raw webhook body.",
+        "ValidationError"
+      );
+
+    }
+
     // Verify webhook authenticity
     const isValid =
       verifyWebhookSignature(
-        req.body,
+        req.rawBody,
         signature
       );
 
@@ -364,7 +374,7 @@ const paystackWebhook = async (req, res, next) => {
     console.log("Signature valid:", isValid);
 
     const event = JSON.parse(
-      req.body.toString()
+      req.rawBody.toString("utf8")
     );
     console.log("Reached step 3");
     console.log(event.event);

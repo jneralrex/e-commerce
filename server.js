@@ -33,8 +33,28 @@ connectDataBase();
 
 app.use(helmet());
 
-app.use(express.json());
-app.use(express.urlencoded({ extended: true }));
+// app.use(express.json());
+app.use(
+  express.json({
+    verify: (req, res, buf) => {
+
+      if (
+        req.originalUrl === "/api/v1/payments/webhook"
+      ) {
+
+        req.rawBody = buf;
+
+      }
+
+    },
+  })
+);
+
+app.use(
+  express.urlencoded({
+    extended: true,
+  })
+);
 
 autoCancelUnpaidOrders();
 
