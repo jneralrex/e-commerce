@@ -1,7 +1,7 @@
 const mongoose = require("mongoose");
 const Cart = require("../models/cart.model");
 const Order = require("../models/order.model");
-const OrderLine = require("../models/orderLine.model");
+const OrderLine = require("../models/orderline.model");
 const CustomError = require("../utils/errors/customErrors");
 const { recalculateCart, validateMOQ, } = require("../service/tier.service");
 const Payment = require("../models/payment.model");
