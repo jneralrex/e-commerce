@@ -3,7 +3,7 @@ const Cart = require("../models/cart.model");
 const Order = require("../models/order.model");
 const OrderLine = require("../models/orderline.model");
 const CustomError = require("../utils/errors/customErrors");
-const { recalculateCart, validateMOQ, } = require("../service/tier.service");
+const { recalculateCart, calculateCartLine, } = require("../service/tier.service");
 const Payment = require("../models/payment.model");
 
 
@@ -31,20 +31,12 @@ const createOrder = async (req, res, next) => {
         const {
             cart: updatedCart,
             productMap,
-        } = await recalculateCart(cart, req.user);
-
-        const moq = validateMOQ(
-            updatedCart.resolvedTier,
-            updatedCart.total_pcs
+        } = await recalculateCart(
+            cart,
+            req.user
         );
 
-        if (!moq.valid) {
-            throw new CustomError(
-                400,
-                moq.message,
-                "MOQError"
-            );
-        }
+        await updatedCart.save({ session });
 
         const createdOrder = (
             await Order.create(
@@ -53,8 +45,6 @@ const createOrder = async (req, res, next) => {
                         account: req.user._id,
 
                         currency: updatedCart.currency,
-
-                        resolvedTier: updatedCart.resolvedTier,
 
                         total_cartons: updatedCart.total_cartons,
 
@@ -96,20 +86,24 @@ const createOrder = async (req, res, next) => {
 
         const orderLineIds = [];
 
-        for (const line of updatedCart.items) {
+        for (const item of updatedCart.items) {
 
             const product =
-                productMap[line.product.toString()];
+                productMap[item.product.toString()];
 
             if (!product) {
                 throw new CustomError(
                     404,
-                    "Product no longer exists.",
-                    "NotFoundError"
+                    "Product no longer exists."
                 );
             }
 
-            // Ensure enough stock exists
+            const line = calculateCartLine(
+                req.user,
+                product,
+                item.pcs
+            );
+
             if (product.stock_pcs < line.pcs) {
                 throw new CustomError(
                     400,
@@ -118,57 +112,56 @@ const createOrder = async (req, res, next) => {
                 );
             }
 
-            // Reserve stock
+            const stockBeforePurchase = product.stock_pcs;
+
             product.stock_pcs -= line.pcs;
 
             await product.save({ session });
 
             const orderLine = (
                 await OrderLine.create(
-                    [
-                        {
-                            order: createdOrder._id,
+                    [{
+                        order: createdOrder._id,
+                        product: product._id,
 
-                            product: product._id,
+                        category: product.category,
+                        product_name: product.name,
+                        product_slug: product.slug,
+                        sku: product.sku,
+                        barcode: product.barcode,
+                        brand: product.brand,
+                        model: product.model,
+                        primary_image: product.images?.[0] || null,
 
+                        carton_size_pcs: product.carton_size_pcs,
+                        carton_weight_kg: product.carton_weight_kg,
+                        carton_length_cm: product.carton_length_cm,
+                        carton_width_cm: product.carton_width_cm,
+                        carton_height_cm: product.carton_height_cm,
 
-                            // Product snapshot
-                            category: product.category,
-                            product_name: product.name,
-                            product_slug: product.slug,
-                            sku: product.sku,
-                            barcode: product.barcode,
-                            brand: product.brand,
-                            model: product.model,
-                            primary_image:
-                                product.images?.[0] || null,
+                        display_quantity:
+                            line.loose_pcs === 0
+                                ? `${line.cartons} cartons`
+                                : `${line.cartons} cartons and ${line.loose_pcs} pcs`,
 
-                            // Packaging snapshot
-                            carton_size_pcs:
-                                product.carton_size_pcs,
-                            carton_weight_kg:
-                                product.carton_weight_kg,
-                            carton_length_cm:
-                                product.carton_length_cm,
-                            carton_width_cm:
-                                product.carton_width_cm,
-                            carton_height_cm:
-                                product.carton_height_cm,
-                            // shippingCost: product.shippingCost,
+                        cartons: line.cartons,
+                        pcs: line.pcs,
+                        loose_pcs: line.loose_pcs,
 
-                            // Purchase snapshot
-                            cartons: line.cartons,
-                            pcs: line.pcs,
+                        unit_price: line.unit_price,
+                        line_total: line.line_total,
 
-                            // Pricing snapshot
-                            unit_price: line.unit_price,
-                            line_total: line.line_total,
-                            discount: product.discount,
+                        discount: product.discount,
 
-                            currency: updatedCart.currency,
-                            tier_used: updatedCart.resolvedTier,
-                        },
-                    ],
+                        currency: line.currency,
+                        tier_used: line.tier_used,
+                        base_tier: line.base_tier,
+                        next_tier: line.next_tier,
+                        message: line.message,
+
+                        stock_before_purchase: stockBeforePurchase,
+                        stock_after_purchase: product.stock_pcs,
+                    }],
                     { session }
                 )
             )[0];
@@ -237,13 +230,8 @@ const getMyOrders = async (req, res, next) => {
 const getSingleOrder = async (req, res, next) => {
     try {
         const order = await Order.findById(req.params.id)
-            .populate("account", "username email")
-            .populate({
-                path: "orderLines",
-                populate: {
-                    path: "product",
-                },
-            });
+            .populate("account", "username")
+            .populate("orderLines");
 
         if (!order) {
             throw new CustomError(404, "Order not found");
@@ -371,7 +359,7 @@ const filterOrders = async (req, res, next) => {
             query.createdAt = { $gte: new Date(start), $lte: new Date(end) };
         }
 
-        const orders = await Order.find(query).populate("user", "username email");
+        const orders = await Order.find(query).populate("account", "fullname email")
         res.status(200).json({ success: true, data: orders });
     } catch (error) {
         next(error);
@@ -384,7 +372,7 @@ const adminCancelOrder = async (req, res, next) => {
         const order = await Order.findById(req.params.id);
         if (!order) return next(new CustomError(404, "Order not found"));
 
-        order.orderStatus = "Cancelled";
+        order.orderStatus = "CANCELLED";
         await order.save();
 
         res.status(200).json({ success: true, message: "Order cancelled by admin" });
@@ -397,26 +385,65 @@ const adminCancelOrder = async (req, res, next) => {
 const getAnalytics = async (req, res, next) => {
     try {
         const totalSales = await Order.aggregate([
-            { $match: { paymentStatus: "Paid" } },
+            { $match: { paymentStatus: "PAID" } },
             {
                 $group: {
                     _id: null,
-                    totalRevenue: { $sum: "$totalAmount" },
+                    totalRevenue: { $sum: "$total_amount" },
                     totalOrders: { $sum: 1 }
                 }
             }
         ]);
 
-        const bestSellers = await Order.aggregate([
-            { $unwind: "$items" },
+        const bestSellers = await OrderLine.aggregate([
+
             {
-                $group: {
-                    _id: "$items.product",
-                    totalSold: { $sum: "$items.quantity" }
+                $lookup: {
+                    from: "orders",
+                    localField: "order",
+                    foreignField: "_id",
+                    as: "order"
                 }
             },
-            { $sort: { totalSold: -1 } },
-            { $limit: 5 },
+
+            {
+                $unwind: "$order"
+            },
+
+            {
+                $match: {
+                    "order.paymentStatus": "PAID"
+                }
+            },
+
+            {
+                $group: {
+                    _id: "$product",
+
+                    totalSoldPcs: {
+                        $sum: "$pcs"
+                    },
+
+                    totalSoldCartons: {
+                        $sum: "$cartons"
+                    },
+
+                    totalRevenue: {
+                        $sum: "$line_total"
+                    }
+                }
+            },
+
+            {
+                $sort: {
+                    totalSoldPcs: -1
+                }
+            },
+
+            {
+                $limit: 5
+            },
+
             {
                 $lookup: {
                     from: "products",
@@ -425,17 +452,30 @@ const getAnalytics = async (req, res, next) => {
                     as: "product"
                 }
             },
-            { $unwind: "$product" },
+
+            {
+                $unwind: "$product"
+            },
+
             {
                 $project: {
-                    productId: "$_id",
+                    _id: 0,
+
+                    productId: "$product._id",
                     productName: "$product.name",
-                    productSlug: "$product.slug",
-                    productPrice: "$product.price",
-                    productImage: "$product.images", // adjust this if images are stored differently
-                    totalSold: 1
+                    slug: "$product.slug",
+                    sku: "$product.sku",
+
+                    image: {
+                        $arrayElemAt: ["$product.images", 0]
+                    },
+
+                    totalSoldPcs: 1,
+                    totalSoldCartons: 1,
+                    totalRevenue: 1
                 }
             }
+
         ]);
 
         res.status(200).json({

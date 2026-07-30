@@ -3,30 +3,76 @@ const Product = require("../models/product.model");
 const CustomError = require("../utils/errors/customErrors");
 
 const {
-  resolveTier,
-  calculateCartLine,
-  calculateCartTotals,
-  validateMOQ,
-  getCurrency,
+  recalculateCart,
 } = require("../service/tier.service");
+
+
+const resolveQuantity = ({ pcs, cartons }, product) => {
+
+  if (pcs != null && cartons != null) {
+
+    throw new CustomError(
+      400,
+      "Provide either pcs or cartons, not both."
+    );
+
+  }
+
+  if (pcs != null) {
+
+    const quantity = Number(pcs);
+
+    if (
+      isNaN(quantity) ||
+      !Number.isInteger(quantity) ||
+      quantity < 1
+    ) {
+      throw new CustomError(
+        400,
+        "Pieces must be a whole number greater than zero."
+      );
+    }
+
+    return quantity;
+  }
+
+  if (cartons != null) {
+
+    const quantity = Number(cartons);
+
+    if (
+      isNaN(quantity) ||
+      quantity <= 0
+    ) {
+      throw new CustomError(
+        400,
+        "Cartons must be greater than zero."
+      );
+    }
+
+    return Math.round(
+      quantity *
+      product.carton_size_pcs
+    );
+  }
+
+  throw new CustomError(
+    400,
+    "Provide either pcs or cartons."
+  );
+
+};
 
 // Add item to cart
 const addToCart = async (req, res, next) => {
   try {
 
-    const { productId, cartons } = req.body;
+    const { productId } = req.body;
 
-    const parsedCartons = Number(cartons);
-
-    if (
-      !productId ||
-      isNaN(parsedCartons) ||
-      !Number.isInteger(parsedCartons) ||
-      parsedCartons < 1
-    ) {
+    if (!productId) {
       throw new CustomError(
         400,
-        "Cartons must be a whole number greater than zero."
+        "Product is required."
       );
     }
 
@@ -35,6 +81,19 @@ const addToCart = async (req, res, next) => {
     if (!product || !product.isAvailable) {
       throw new CustomError(404, "Product not available.");
     }
+
+
+    const quantityPcs = resolveQuantity(
+      req.body,
+      product
+    );
+
+    if (quantityPcs > product.stock_pcs) {
+    throw new CustomError(
+        400,
+        `Only ${product.stock_pcs} pcs available.`
+    );
+  }
 
     let cart = await Cart.findOne({ user: req.user._id });
 
@@ -57,8 +116,11 @@ const addToCart = async (req, res, next) => {
     }
 
     cart.items.push({
+
       product: productId,
-      cartons: parsedCartons,
+
+      pcs: quantityPcs
+
     });
 
     await cart.save();
@@ -76,103 +138,96 @@ const addToCart = async (req, res, next) => {
 
 //  Fetch user's cart
 const getUserCart = async (req, res, next) => {
+
   try {
 
     const cart = await Cart.findOne({
-      user: req.user._id,
-    }).populate("items.product");
+      user: req.user._id
+    });
 
     if (!cart || cart.items.length === 0) {
+
       return res.status(200).json({
         success: true,
         cart: {
           items: [],
-          totalPcs: 0,
+          total_cartons: 0,
+          total_pcs: 0,
           subtotal: 0,
-        },
+          currency: "NGN"
+        }
       });
+
     }
 
-    // Calculate total pcs first
+    const { cart: updatedCart } =
+      await recalculateCart(cart, req.user);
 
-    const totalPcs = cart.items.reduce((sum, item) => {
+    await updatedCart.populate("items.product");
 
-      return sum + (
-        item.cartons *
-        item.product.carton_size_pcs
-      );
+    await updatedCart.save();
 
-    }, 0);
+    const responseCart = updatedCart.toObject();
 
-    // Resolve customer's tier
+    responseCart.items = responseCart.items.map(item => {
 
-    const tier = resolveTier(req.user, totalPcs);
+      const cartonSize =
+        item.product.carton_size_pcs;
 
-    // Recalculate every line
+      const cartons =
+        Math.floor(item.pcs / cartonSize);
 
-    const lines = cart.items.map(item =>
-      calculateCartLine(
-        item.product,
-        item.cartons,
-        tier
-      )
-    );
+      const loosePcs =
+        item.pcs % cartonSize;
 
-    const totals = calculateCartTotals(lines);
+      return {
 
-    const moq = validateMOQ(
-      tier,
-      totals.totalPcs
-    );
+        ...item,
 
+        cartons,
 
-    res.status(200).json({
+        loose_pcs: loosePcs,
 
-      success: true,
+        display_quantity:
+          loosePcs === 0
+            ? `${cartons} cartons`
+            : `${cartons} cartons and ${loosePcs} pcs`
 
-      cart: {
-
-        tier,
-
-        currency: getCurrency(tier),
-
-        items: lines,
-
-        totalPcs: totals.totalPcs,
-
-        subtotal: totals.subtotal,
-
-        moq
-
-      }
+      };
 
     });
 
-  } catch (error) {
+    return res.status(200).json({
+
+      success: true,
+
+      cart: responseCart
+
+    });
+
+
+
+  }
+
+  catch (error) {
 
     next(error);
 
   }
+
 };
 
 // Update quantity of a specific item
-const updateCartItemCartons = async (req, res, next) => {
+const updateCartItemQuantity = async (req, res, next) => {
 
   try {
 
-    const { productId, cartons } = req.body;
+    const { productId } = req.body;
 
-    const parsedCartons = Number(cartons);
-
-    if (
-      !productId ||
-      isNaN(parsedCartons) ||
-      !Number.isInteger(parsedCartons) ||
-      parsedCartons < 1
-    ) {
+    if (!productId) {
       throw new CustomError(
         400,
-        "Cartons must be at least 1."
+        "Product is required."
       );
     }
 
@@ -195,10 +250,33 @@ const updateCartItemCartons = async (req, res, next) => {
       );
     }
 
-    item.cartons = parsedCartons;
+    const product = await Product.findById(productId);
+
+    if (!product || !product.isAvailable) {
+      throw new CustomError(
+        404,
+        "Product not available."
+      );
+    }
+
+    const quantityPcs = resolveQuantity(
+      req.body,
+      product
+    );
+
+    if (quantityPcs > product.stock_pcs) {
+    throw new CustomError(
+        400,
+        `Only ${product.stock_pcs} pcs available.`
+    );
+}
+
+    item.pcs = quantityPcs;
+
+    await recalculateCart(cart, req.user);
 
     await cart.save();
-
+    
     res.status(200).json({
       success: true,
       message: "Cart updated successfully."
@@ -230,6 +308,8 @@ const removeFromCart = async (req, res, next) => {
     cart.items = cart.items.filter(
       item => item.product.toString() !== productId
     );
+
+    await recalculateCart(cart, req.user);
 
     await cart.save();
 
@@ -271,7 +351,7 @@ const clearCart = async (req, res, next) => {
 module.exports = {
   addToCart,
   getUserCart,
-  updateCartItemCartons,
+  updateCartItemQuantity,
   removeFromCart,
   clearCart,
 };

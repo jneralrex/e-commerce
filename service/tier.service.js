@@ -1,223 +1,412 @@
-const { TIERS, TIER_RULES } = require("../constants/tier.constants");
+const { TIERS, TIER_ORDER } = require("../constants/tier.constants");
 const Product = require("../models/product.model");
 const CustomError = require("../utils/errors/customErrors");
 
-/**
- * Resolve customer's purchasing tier.
- * Distributor accounts always use their assigned tier.
- * Retailers & wholesalers are resolved dynamically.
- */
-const resolveTier = (user, totalPcs) => {
 
-    // Fixed distributor accounts
+
+const getBaseTier = (user) => {
+
     if (
-        user.assignedTier === TIERS.DISTRIBUTOR_LOCAL ||
-        user.assignedTier === TIERS.DISTRIBUTOR_INTERNATIONAL
+        user.assignedTier &&
+        TIER_ORDER.includes(user.assignedTier)
     ) {
         return user.assignedTier;
     }
 
-    // Wholesaler pricing
-    if (totalPcs >= TIER_RULES.wholesaler.min_order_pcs) {
-        return TIERS.WHOLESALER;
-    }
-
-    // Everyone else uses retailer pricing
     return TIERS.RETAILER;
+
+};
+
+
+const getNextTier = (tier) => {
+
+    const index = TIER_ORDER.indexOf(tier);
+
+    if (index === -1) return null;
+
+    return TIER_ORDER[index + 1] ?? null;
+
 };
 
 /**
- * Returns the correct price based on customer's tier.
+ * Resolve customer's purchasing tier.
+ * Distributor accounts always use their assigned tier.
+ * Retailer/Wholesaler are resolved PER PRODUCT.
  */
-const getApplicablePrice = (product, tier) => {
-    switch (tier) {
-        case TIERS.RETAILER:
-            return product.price_retailer_ngn;
+const resolveTier = (user, product, pcs) => {
 
-        case TIERS.WHOLESALER:
-            return product.price_wholesaler_ngn;
+    const pricing = product.pricing;
 
-        case TIERS.DISTRIBUTOR_LOCAL:
-            return product.price_distributor_ngn;
+    if (!pricing) {
 
-        case TIERS.DISTRIBUTOR_INTERNATIONAL:
-            return product.price_international_usd;
+        throw new CustomError(
+            400,
+            `${product.name} has no pricing configured.`,
+            "ValidationError"
+        );
+
+    }
+
+    const baseTier = getBaseTier(user);
+
+    let appliedTier = baseTier;
+
+    const startIndex = TIER_ORDER.indexOf(baseTier);
+
+    /**
+     * Walk UP the ladder.
+     */
+
+    for (let i = startIndex + 1; i < TIER_ORDER.length; i++) {
+
+        const tier = TIER_ORDER[i];
+
+        const config = pricing[tier];
+
+        if (!config) continue;
+
+        if (pcs >= config.moq) {
+
+            appliedTier = tier;
+
+        } else {
+
+            break;
+
+        }
+
+    }
+
+    /**
+     * Validate minimum order of CURRENT tier.
+     */
+
+    const currentConfig = pricing[baseTier];
+
+    const valid = pcs >= currentConfig.moq;
+
+    const nextTier = getNextTier(appliedTier);
+
+    let remaining = 0;
+
+    if (nextTier && pricing[nextTier]) {
+
+        remaining = Math.max(
+            0,
+            pricing[nextTier].moq - pcs
+        );
+
+    }
+
+    return {
+
+        valid,
+
+        tier: appliedTier,
+
+        currentTier: baseTier,
+
+        nextTier,
+
+        nextTierRemaining: remaining,
+
+        message:
+            !valid
+                ? `Minimum order for ${baseTier.replace("_", " ")} is ${currentConfig.moq} pcs.`
+                : appliedTier !== baseTier
+                    ? `Ordering at ${appliedTier.replace("_", " ")} pricing.`
+                    : `Ordering at ${baseTier.replace("_", " ")} pricing.`
+
+    };
+
+};
+
+
+const resolveVisiblePrice = (product, user) => {
+
+    if (!user) {
+
+        const config = getTierConfig(product, TIERS.RETAILER);
+
+        return {
+            currency: config.currency,
+            price: config.unit_price,
+            tier: "public"
+        };
+
+    }
+
+    let tier = TIERS.RETAILER;
+
+    switch (user.assignedTier) {
+
+        case "distributor":
+            tier = TIERS.DISTRIBUTOR_LOCAL;
+            break;
+
+        case "international":
+            tier = TIERS.DISTRIBUTOR_INTERNATIONAL;
+            break;
 
         default:
-            return null;
+            tier = TIERS.RETAILER;
+
     }
+
+    const config = getTierConfig(product, tier);
+
+    return {
+        currency: config.currency,
+        price: config.unit_price,
+        tier
+    };
+
 };
 
 /**
- * Calculates a single cart line.
+ * Returns applicable pricing object.
  */
-const calculateCartLine = (product, cartons, tier) => {
+const getTierConfig = (product, tier) => {
+
+    if (!tier) {
+        throw new CustomError(
+            400,
+            "Pricing tier is required.",
+            "ValidationError"
+        );
+    }
+
+    const config = product?.pricing?.[tier];
+
+    if (!config) {
+        throw new CustomError(
+            400,
+            `Pricing for tier "${tier}" is not configured.`,
+            "ValidationError"
+        );
+    }
+
+    return config;
+
+};
+
+/**
+ * Unit price.
+ */
+
+const getApplicablePrice = (product, tier) => {
+
+    return getTierConfig(product, tier).unit_price;
+
+};
+
+
+
+/**
+ * Currency.
+ */
+const getCurrency = (product, tier) => {
+
+    return getTierConfig(product, tier).currency;
+
+};
+
+/**
+ * Whether this tier supports self-service.
+ */
+
+const isSelfService = (product, tier) => {
+
+    return getTierConfig(product, tier).self_service;
+
+};
+
+
+/**
+ * Calculate one cart line.
+ */
+const calculateCartLine = (user, product, pcs) => {
+
     if (!product.carton_size_pcs) {
         throw new CustomError(
             400,
-            `${product.name} has no carton size configured.`,
-            "ValidationError"
+            `${product.name} has no carton size configured.`
         );
     }
 
-    const unitPrice = getApplicablePrice(product, tier);
+    pcs = Number(pcs);
 
-    if (unitPrice == null) {
+    if (!Number.isFinite(pcs) || pcs < 1) {
         throw new CustomError(
             400,
-            `No price configured for tier "${tier}".`,
-            "ValidationError"
+            "Quantity must be at least 1 piece."
         );
     }
 
-    const pcs = cartons * product.carton_size_pcs;
-
-    return {
-        product,
-        cartons,
-        pcs,
-        unit_price: unitPrice,
-        line_total: pcs * unitPrice,
-    };
-};
-
-/**
- * Validate Minimum Order Quantity.
- */
-const validateMOQ = (tier, totalPcs) => {
-
-    const rule = TIER_RULES[tier];
-
-    if (!rule) {
-        return {
-            valid: false,
-            remaining: 0,
-            message: "Invalid tier.",
-        };
-    }
-
-    const remaining = Math.max(
-        0,
-        rule.min_order_pcs - totalPcs
+    const cartons = Math.floor(
+        pcs / product.carton_size_pcs
     );
 
+    const loose_pcs =
+        pcs % product.carton_size_pcs;
+
+    const tierResult = resolveTier(
+        user,
+        product,
+        pcs
+    );
+
+    if (!tierResult.valid) {
+        throw new CustomError(
+            400,
+            tierResult.message
+        );
+    }
+
+    const config = getTierConfig(product, tierResult.tier);
+
     return {
-        valid: remaining === 0,
-        remaining,
-        message:
-            remaining === 0
-                ? "MOQ satisfied."
-                : `You need ${remaining} more pcs to reach the minimum order quantity.`,
+
+        pcs,
+
+        cartons,
+
+        loose_pcs,
+
+        unit_price: getApplicablePrice(product, tierResult.tier),
+
+        currency: getCurrency(product, tierResult.tier),
+
+        self_service: isSelfService(product, tierResult.tier),
+
+        line_total:
+            getApplicablePrice(product, tierResult.tier) * pcs,
+
+        currency: config.currency,
+
+        tier_used: tierResult.tier,
+
+        base_tier: tierResult.currentTier,
+
+        next_tier: tierResult.nextTier,
+
+        next_tier_remaining:
+            tierResult.nextTierRemaining,
+
+        required_moq: config.moq
+
     };
-};
-/**
- * Resolve order currency.
- */
-const getCurrency = (tier) => {
-    return tier === TIERS.DISTRIBUTOR_INTERNATIONAL ? "USD" : "NGN";
+
 };
 
 /**
- * Calculate cart totals.
+ * Cart totals.
  */
-const calculateCartTotals = (items) => {
-    return {
-        totalPcs: items.reduce((sum, item) => sum + item.pcs, 0),
-        totalCartons: items.reduce((sum, item) => sum + item.cartons, 0),
-        subtotal: items.reduce((sum, item) => sum + item.line_total, 0),
-    };
-};
+const calculateCartTotals = (items) => ({
+
+    totalPcs: items.reduce(
+        (sum, item) => sum + item.pcs,
+        0
+    ),
+
+
+    subtotal: items.reduce(
+        (sum, item) => sum + item.line_total,
+        0
+    ),
+
+});
 
 /**
- * Recalculate the entire cart whenever an item changes.
+ * Recalculate entire cart.
+ *
+ * NOTE:
+ * Every product now resolves its own tier.
  */
 const recalculateCart = async (cart, user) => {
+
     const products = await Product.find({
         _id: {
-            $in: cart.items.map((item) => item.product),
-        },
+            $in: cart.items.map(item => item.product)
+        }
     });
 
-    const productMap = {};
-
-    products.forEach((product) => {
-        productMap[product._id.toString()] = product;
-    });
+    const productMap = Object.fromEntries(
+        products.map(product => [
+            product._id.toString(),
+            product
+        ])
+    );
 
     let totalPcs = 0;
+    let subtotal = 0;
 
-    // First Pass
-    cart.items.forEach((item) => {
+    const currencies = new Set();
+
+    for (const item of cart.items) {
+
         const product = productMap[item.product.toString()];
 
         if (!product) {
             throw new CustomError(
                 404,
-                "One or more products in the cart no longer exist.",
+                "One or more products no longer exist.",
                 "NotFoundError"
             );
         }
 
-        if (!product.carton_size_pcs) {
-            throw new CustomError(
-                400,
-                `${product.name} has no carton size configured.`,
-                "ValidationError"
-            );
-        }
+        const line = calculateCartLine(
+            user,
+            product,
+            item.pcs
+        );
 
-        if (item.cartons < 1) {
-            throw new CustomError(
-                400,
-                "Cartons must be at least 1.",
-                "ValidationError"
-            );
-        }
+        // Persist only schema fields
+        item.pcs = line.pcs;
 
-        item.pcs = item.cartons * product.carton_size_pcs;
+        // Calculate cart totals
+        totalPcs += line.pcs;
+        subtotal += line.line_total;
 
-        totalPcs += item.pcs;
-    });
+        currencies.add(line.currency);
 
-    const tier = resolveTier(user, totalPcs);
+    }
 
-    cart.items.forEach((item) => {
-        const product = productMap[item.product.toString()];
+    cart.total_pcs = totalPcs;
+    cart.subtotal = subtotal;
 
-        const unitPrice = getApplicablePrice(product, tier);
-
-        if (unitPrice == null) {
-            throw new CustomError(
-                400,
-                `No price configured for tier "${tier}".`,
-                "ValidationError"
-            );
-        }
-
-        item.unit_price = unitPrice;
-        item.line_total = unitPrice * item.pcs;
-    });
-
-    const totals = calculateCartTotals(cart.items);
-
-    cart.total_cartons = totals.totalCartons;
-    cart.total_pcs = totals.totalPcs;
-    cart.subtotal = totals.subtotal;
-    cart.resolvedTier = tier;
-    cart.currency = getCurrency(tier);
+    cart.currency =
+        currencies.size === 1
+            ? [...currencies][0]
+            : [...currencies];
 
     return {
         cart,
-        productMap,
+        productMap
     };
+
 };
 
+
+
 module.exports = {
+
     resolveTier,
+
+    getTierConfig,
+
     getApplicablePrice,
-    calculateCartLine,
-    calculateCartTotals,
-    validateMOQ,
+
     getCurrency,
-    recalculateCart,
+
+    isSelfService,
+
+    resolveVisiblePrice,
+
+    calculateCartLine,
+
+    calculateCartTotals,
+
+    recalculateCart
+
 };

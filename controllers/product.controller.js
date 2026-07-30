@@ -1,6 +1,8 @@
 const Product = require("../models/product.model");
+const Category = require("../models/category.model");
+const { resolveVisiblePrice } = require("../service/tier.service");
 const CustomError = require("../utils/errors/customErrors");
-const slugify = require("slugify");
+// const slugify = require("slugify");
 
 
 // @desc Create new product
@@ -23,10 +25,7 @@ const createProduct = async (req, res, next) => {
       carton_width_cm,
       carton_height_cm,
 
-      price_retailer_ngn,
-      price_wholesaler_ngn,
-      price_distributor_ngn,
-      price_international_usd,
+      pricing,
 
       discount,
 
@@ -44,7 +43,7 @@ const createProduct = async (req, res, next) => {
 
       allowSelfService,
     } = req.body;
-
+    console.log("object body", req.body);
     const images =
       req.files?.images?.map(file => ({
         url: file.path,
@@ -57,9 +56,92 @@ const createProduct = async (req, res, next) => {
         public_id: file.filename,
       })) || [];
 
+
+
+    // Validating Stock amount
+    if (Number(stock_pcs) < Number(carton_size_pcs)) {
+      throw new CustomError(
+        400,
+        "Stock cannot be less than one full carton."
+      );
+    }
+
+    if (images.length === 0) {
+      throw new CustomError(
+        400,
+        "At least one product image is required."
+      );
+    }
+
+    const existing = await Product.exists({
+      sku
+    });
+
+    if (existing) {
+      throw new CustomError(
+        409,
+        "SKU already exists."
+      );
+    }
+
+    // Validate category
+    if (!category) {
+      throw new CustomError(
+        400,
+        "Category is required."
+      );
+    }
+
+    const existingCategory = await Category.findById(category);
+
+    if (!existingCategory) {
+      throw new CustomError(
+        404,
+        "Category not found."
+      );
+    }
+
+    const existingBarcode = await Product.exists({
+      barcode
+    });
+
+    if (existingBarcode) {
+      throw new CustomError(
+        409,
+        "Barcode already exists."
+      );
+    }
+    const tiers = [
+      "retailer",
+      "wholesaler",
+      "distributor_local",
+      "distributor_international"
+    ];
+
+    for (const tier of tiers) {
+      if (!pricing?.[tier]) {
+        throw new CustomError(
+          400,
+          `${tier} pricing is required.`
+        );
+      }
+    }
+
+    if (pricing) {
+
+      Object.values(pricing).forEach(tier => {
+
+        tier.unit_price = Number(tier.unit_price);
+
+        tier.moq = Number(tier.moq);
+
+      });
+
+    }
+
     const product = await Product.create({
       name,
-      slug: slugify(name, { lower: true, strict: true }),
+      // slug: slugify(name, { lower: true, strict: true }),
 
       description,
       colors,
@@ -76,11 +158,7 @@ const createProduct = async (req, res, next) => {
       carton_width_cm: Number(carton_width_cm),
       carton_height_cm: Number(carton_height_cm),
 
-      price_retailer_ngn: Number(price_retailer_ngn),
-      price_wholesaler_ngn: Number(price_wholesaler_ngn),
-      price_distributor_ngn: Number(price_distributor_ngn),
-      price_international_usd: Number(price_international_usd),
-
+      pricing,
       discount: Number(discount || 0),
 
       category,
@@ -107,14 +185,6 @@ const createProduct = async (req, res, next) => {
     });
 
 
-    // Validating Stock amount
-    if (Number(stock_pcs) < Number(carton_size_pcs)) {
-      throw new CustomError(
-        400,
-        "Stock cannot be less than one full carton."
-      );
-    }
-
     res.status(201).json({
       success: true,
       message: "Product created successfully",
@@ -130,73 +200,208 @@ const createProduct = async (req, res, next) => {
 // @access Public
 const getAllProducts = async (req, res, next) => {
   try {
-    const page = parseInt(req.query.page) || 1;
-    const limit = parseInt(req.query.limit) || 20;
+
+    const page = Math.max(1, Number(req.query.page) || 1);
+    const limit = Math.max(1, Number(req.query.limit) || 20);
+    const isAdmin = req.user?.role === "admin";
 
     const {
       keyword,
       category,
-      minPrice,
-      maxPrice,
       brand,
       size,
-      color
+      color,
+      seller,
+      minStock,
+      maxStock,
+      minPrice,
+      maxPrice,
+      sort = "newest"
     } = req.query;
 
     const filter = {};
 
-    // Keyword search
+    /**
+     * Keyword Search
+     */
     if (keyword) {
-      filter.name = { $regex: keyword, $options: "i" };
+
+      const regex = new RegExp(keyword, "i");
+
+      filter.$or = [
+        { name: regex },
+        { sku: regex },
+        { barcode: regex },
+        { brand: regex },
+        { model: regex },
+        { tags: regex }
+      ];
+
     }
 
-    // Filter by category
+    /**
+     * Category
+     */
     if (category) {
       filter.category = category;
     }
 
-    // Price filtering
-    if (minPrice || maxPrice) {
-      filter.price = {};
-      if (minPrice) filter.price.$gte = parseFloat(minPrice);
-      if (maxPrice) filter.price.$lte = parseFloat(maxPrice);
+    /**
+     * Seller
+     */
+    if (isAdmin && seller) {
+      filter.seller = seller;
     }
 
-    // Brand / Color / Size filtering
-    if (brand) filter.brand = brand;
-    if (color) filter.colors = color;
-    if (size) filter.sizes = size;
+    /**
+     * Brand
+     */
+    if (brand) {
+      filter.brand = brand;
+    }
+
+    /**
+     * Colors
+     */
+    if (color) {
+      filter.colors = color;
+    }
+
+    /**
+     * Sizes
+     */
+    if (size) {
+      filter.sizes = size;
+    }
+
+    /**
+     * Stock filtering
+     */
+
+    if (isAdmin && (minStock || maxStock)) {
+
+      filter.stock_pcs = {};
+
+      if (minStock) {
+        filter.stock_pcs.$gte = Number(minStock);
+      }
+
+      if (maxStock) {
+        filter.stock_pcs.$lte = Number(maxStock);
+      }
+
+    }
+
+    /**
+     * Retail price filtering
+     * (Public endpoint)
+     */
+
+    if (minPrice || maxPrice) {
+
+      filter.price_retailer_ngn = {};
+
+      if (minPrice) {
+        filter.price_retailer_ngn.$gte = Number(minPrice);
+      }
+
+      if (maxPrice) {
+        filter.price_retailer_ngn.$lte = Number(maxPrice);
+      }
+
+    }
+
+    /**
+     * Sorting
+     */
+
+    const sortMap = {
+      newest: { createdAt: -1 },
+      oldest: { createdAt: 1 },
+      name_asc: { name: 1 },
+      name_desc: { name: -1 },
+      retailer_price_low: { price_retailer_ngn: 1 },
+      retailer_price_high: { price_retailer_ngn: -1 }
+    };
+
+    if (isAdmin) {
+
+      sortMap.stock_high = {
+        stock_pcs: -1
+      };
+
+      sortMap.stock_low = {
+        stock_pcs: 1
+      };
+
+    }
 
     const total = await Product.countDocuments(filter);
 
-    const products = await Product.find(filter)
+    const productsFromDB = await Product.find(filter)
       .populate("category", "name")
-      .populate("seller", "username email")
-      .populate({
-        path: "reviews",
-        options: {
-          limit: 20,
-          sort: { createdAt: -1 }
-        },
-        select: "rating comment",
-        populate: {
-          path: "user",
-          select: "username profilePhoto"
-        }
-      })
+      .populate("seller", isAdmin ? "username email" : "username")
+      .select("-__v")
       .skip((page - 1) * limit)
       .limit(limit)
-      .sort({ createdAt: -1 });
+      .sort(sortMap[sort] || sortMap.newest)
+      .lean();
+
+    /**
+     * Format stock
+     */
+
+    const products = productsFromDB.map(product => {
+      const visible = resolveVisiblePrice(product, req.user);
+
+      const {
+        stock_pcs,
+        isAvailable,
+        price_retailer_ngn,
+        price_wholesaler_ngn,
+        price_distributor_ngn,
+        price_international_usd,
+        ...safeProduct
+      } = product;
+
+      const available =
+        isAvailable &&
+        stock_pcs >= product.carton_size_pcs;
+
+      const response = {
+        ...safeProduct,
+        price: visible.price,
+        currency: visible.currency,
+        tier: visible.tier,
+        available
+      };
+
+      if (isAdmin) {
+        response.stock_pcs = stock_pcs;
+        response.isAvailable = isAvailable;
+      }
+
+      return response;
+    });
 
     res.status(200).json({
+
       success: true,
+
       total,
+
       page,
+
       pages: Math.ceil(total / limit),
-      products
+
+      products: products
+
     });
+
   } catch (error) {
+
     next(error);
+
   }
 };
 
@@ -208,7 +413,7 @@ const getProductById = async (req, res, next) => {
   try {
     const product = await Product.findById(req.params.id)
       .populate("category", "name")
-      .populate("seller", "username email")
+      .populate("seller", "username")
       .populate({
         path: "reviews",
         populate: { path: "user", select: "username profilePhoto" }
@@ -231,7 +436,7 @@ const getProductBySlug = async (req, res, next) => {
   try {
     const product = await Product.findOne({ slug: req.params.slug })
       .populate("category", "name")
-      .populate("seller", "username email")
+      .populate("seller", "username")
       .populate({
         path: "reviews",
         populate: { path: "user", select: "username profilePhoto" }
@@ -273,22 +478,39 @@ const updateProduct = async (req, res, next) => {
 
     const updates = { ...req.body };
 
-    // Update slug
-    if (updates.name) {
-      updates.slug = slugify(updates.name, {
-        lower: true,
-        strict: true,
+
+    if (updates.sku) {
+      const existing = await Product.exists({
+        sku: updates.sku,
+        _id: { $ne: product._id }
       });
+
+      if (existing) {
+        throw new CustomError(
+          409,
+          "SKU already exists."
+        );
+      }
+    }
+
+    if (updates.barcode) {
+      const existingBarcode = await Product.exists({
+        barcode: updates.barcode,
+        _id: { $ne: product._id }
+      });
+
+      if (existingBarcode) {
+        throw new CustomError(
+          409,
+          "Barcode already exists."
+        );
+      }
     }
 
     // Convert numeric fields
     const numberFields = [
       "carton_size_pcs",
       "stock_pcs",
-      "price_retailer_ngn",
-      "price_wholesaler_ngn",
-      "price_distributor_ngn",
-      "price_international_usd",
       "discount",
       "shippingCost",
       "carton_weight_kg",
@@ -326,31 +548,89 @@ const updateProduct = async (req, res, next) => {
       }));
     }
 
-    if (
-      updates.stock_pcs !== undefined &&
-      updates.stock_pcs < updates.carton_size_pcs
-    ) {
+    const cartonSize =
+      updates.carton_size_pcs ??
+      product.carton_size_pcs;
+
+    const stock =
+      updates.stock_pcs ??
+      product.stock_pcs;
+
+    if (stock < cartonSize) {
       throw new CustomError(
         400,
         "Stock cannot be less than one carton."
       );
     }
 
-    const updatedProduct = await Product.findByIdAndUpdate(
-      req.params.id,
-      updates,
-      {
-        new: true,
-        runValidators: true,
+
+    if (updates.pricing) {
+
+      const tiers = [
+        "retailer",
+        "wholesaler",
+        "distributor_local",
+        "distributor_international"
+      ];
+
+      // Merge existing pricing with incoming updates
+      const mergedPricing = {
+        ...product.pricing.toObject(),
+        ...updates.pricing
+      };
+
+      // Validate and normalize
+      for (const tier of tiers) {
+
+        if (!mergedPricing[tier]) {
+          continue;
+        }
+
+        mergedPricing[tier].unit_price = Number(
+          mergedPricing[tier].unit_price
+        );
+
+        mergedPricing[tier].moq = Number(
+          mergedPricing[tier].moq
+        );
+
+        if (
+          isNaN(mergedPricing[tier].unit_price) ||
+          mergedPricing[tier].unit_price < 0
+        ) {
+          throw new CustomError(
+            400,
+            `${tier} unit price is invalid.`
+          );
+        }
+
+        if (
+          isNaN(mergedPricing[tier].moq) ||
+          mergedPricing[tier].moq < 1
+        ) {
+          throw new CustomError(
+            400,
+            `${tier} MOQ is invalid.`
+          );
+        }
       }
-    )
-      .populate("category", "name")
-      .populate("seller", "username email");
+
+      product.pricing = mergedPricing;
+
+      delete updates.pricing;
+    }
+
+    Object.assign(product, updates);
+
+    await product.save();
+
+    await product.populate("category", "name");
+    await product.populate("seller", "username");
 
     res.status(200).json({
       success: true,
       message: "Product updated successfully",
-      product: updatedProduct,
+      product
     });
 
   } catch (error) {

@@ -2,7 +2,7 @@ const router = require("express").Router();
 const {
   addToCart,
   getUserCart,
-  updateCartItemCartons,
+  updateCartItemQuantity,
   removeFromCart,
   clearCart,
 } = require("../controllers/cart.controller");
@@ -13,7 +13,7 @@ router.use(authenticate);
 
 router.post("/add", addToCart);
 router.get("/", getUserCart);
-router.patch("/update", updateCartItemCartons);
+router.patch("/update", updateCartItemQuantity);
 router.delete("/remove/:productId", removeFromCart);
 router.delete("/clear", clearCart);
 

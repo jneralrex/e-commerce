@@ -26,16 +26,16 @@ const orderSchema = new mongoose.Schema(
       default: "NGN",
     },
 
-    resolvedTier: {
-      type: String,
-      enum: [
-        "retailer",
-        "wholesaler",
-        "distributor_local",
-        "distributor_international",
-      ],
-      required: true,
-    },
+    // resolvedTier: {
+    //   type: String,
+    //   enum: [
+    //     "retailer",
+    //     "wholesaler",
+    //     "distributor_local",
+    //     "distributor_international",
+    //   ],
+    //   required: true,
+    // },
 
     total_cartons: {
       type: Number,
