@@ -297,31 +297,37 @@ const getAllProducts = async (req, res, next) => {
      * (Public endpoint)
      */
 
-    if (minPrice || maxPrice) {
+    const visibleTier = req.user?.assignedTier || "retailer";
 
-      filter.price_retailer_ngn = {};
+    if (minPrice || maxPrice) {
+      filter[`pricing.${visibleTier}.unit_price`] = {};
 
       if (minPrice) {
-        filter.price_retailer_ngn.$gte = Number(minPrice);
+        filter[`pricing.${visibleTier}.unit_price`].$gte = Number(minPrice);
       }
 
       if (maxPrice) {
-        filter.price_retailer_ngn.$lte = Number(maxPrice);
+        filter[`pricing.${visibleTier}.unit_price`].$lte = Number(maxPrice);
       }
-
     }
-
     /**
      * Sorting
      */
+
 
     const sortMap = {
       newest: { createdAt: -1 },
       oldest: { createdAt: 1 },
       name_asc: { name: 1 },
       name_desc: { name: -1 },
-      retailer_price_low: { price_retailer_ngn: 1 },
-      retailer_price_high: { price_retailer_ngn: -1 }
+
+      price_low: {
+        [`pricing.${visibleTier}.unit_price`]: 1
+      },
+
+      price_high: {
+        [`pricing.${visibleTier}.unit_price`]: -1
+      }
     };
 
     if (isAdmin) {
@@ -357,10 +363,7 @@ const getAllProducts = async (req, res, next) => {
       const {
         stock_pcs,
         isAvailable,
-        price_retailer_ngn,
-        price_wholesaler_ngn,
-        price_distributor_ngn,
-        price_international_usd,
+        pricing,
         ...safeProduct
       } = product;
 
