@@ -247,9 +247,7 @@ const updateCartItemQuantity = async (req, res, next) => {
 
 //  Remove a specific item from cart
 const removeFromCart = async (req, res, next) => {
-
   try {
-
     const { productId } = req.params;
 
     const cart = await Cart.findOne({
@@ -265,43 +263,45 @@ const removeFromCart = async (req, res, next) => {
     );
 
     await recalculateCart(cart, req.user);
-
     await cart.save();
 
-    res.status(200).json({
+    await cart.populate("items.product");
+
+    return res.status(200).json({
       success: true,
-      message: "Item removed successfully."
+      message: "Item removed successfully.",
+      cart: formatCartResponse(cart)
     });
 
   } catch (error) {
-
     next(error);
-
   }
-
 };
 
 // Clear entire cart
 const clearCart = async (req, res, next) => {
-
   try {
-
     await Cart.findOneAndDelete({
       user: req.user._id,
     });
 
-    res.status(200).json({
+    return res.status(200).json({
       success: true,
-      message: "Cart cleared."
+      message: "Cart cleared.",
+      cart: {
+        items: [],
+        total_cartons: 0,
+        total_pcs: 0,
+        subtotal: 0,
+        currency: "NGN"
+      }
     });
 
   } catch (error) {
-
     next(error);
-
   }
-
 };
+
 
 module.exports = {
   addToCart,
