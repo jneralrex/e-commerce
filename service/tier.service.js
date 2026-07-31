@@ -318,6 +318,8 @@ const recalculateCart = async (cart, user) => {
 
     const currencies = new Set();
 
+    const calculatedItems = [];
+
     for (const item of cart.items) {
 
         const product = productMap[item.product.toString()];
@@ -339,11 +341,33 @@ const recalculateCart = async (cart, user) => {
         // Persist only schema fields
         item.pcs = line.pcs;
 
-        // Calculate cart totals
         totalPcs += line.pcs;
         subtotal += line.line_total;
 
         currencies.add(line.currency);
+
+        calculatedItems.push({
+            productId: product._id,
+            product,
+
+            pcs: line.pcs,
+            cartons: line.cartons,
+            loose_pcs: line.loose_pcs,
+
+            unit_price: line.unit_price,
+            line_total: line.line_total,
+            currency: line.currency,
+
+            tier_used: line.tier_used,
+            base_tier: line.base_tier,
+
+            required_moq: line.required_moq,
+
+            next_tier: line.next_tier,
+            next_tier_remaining: line.next_tier_remaining,
+
+            message: line.message
+        });
 
     }
 
@@ -357,6 +381,7 @@ const recalculateCart = async (cart, user) => {
 
     return {
         cart,
+        items: calculatedItems,
         productMap
     };
 
