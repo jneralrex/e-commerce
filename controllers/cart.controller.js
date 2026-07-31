@@ -197,22 +197,10 @@ const getUserCart = async (req, res, next) => {
 // Update quantity of a specific item
 const updateCartItemQuantity = async (req, res, next) => {
   try {
-    const { productId } = req.body;
+    const { productId, pcs } = req.body;
 
     if (!productId) {
       throw new CustomError(400, "Product is required.");
-    }
-
-    const cart = await Cart.findOne({ user: req.user._id });
-    if (!cart) {
-      throw new CustomError(404, "Cart not found.");
-    }
-
-    const item = cart.items.find(
-      (item) => item.product.toString() === productId
-    );
-    if (!item) {
-      throw new CustomError(404, "Product not found in cart.");
     }
 
     const product = await Product.findById(productId);
@@ -220,29 +208,55 @@ const updateCartItemQuantity = async (req, res, next) => {
       throw new CustomError(404, "Product not available.");
     }
 
-    const quantityPcs = resolveQuantity(req.body, product);
+    let cart = await Cart.findOne({ user: req.user._id });
+    if (!cart) {
+      cart = new Cart({
+        user: req.user._id,
+        items: []
+      });
+    }
+
+    let item = cart.items.find(
+      (item) => item.product.toString() === productId
+    );
+
+    const quantityPcs = resolveQuantity ? resolveQuantity(req.body, product) : Number(pcs || 0);
 
     if (quantityPcs > product.stock_pcs) {
       throw new CustomError(400, `Only ${product.stock_pcs} pcs available.`);
     }
 
-    item.pcs = quantityPcs;
+    if (!item) {
+      if (quantityPcs > 0) {
+        cart.items.push({
+          product: productId,
+          pcs: quantityPcs
+        });
+      }
+    } else {
+      if (quantityPcs <= 0) {
+        cart.items = cart.items.filter((i) => i.product.toString() !== productId);
+      } else {
+        item.pcs = quantityPcs;
+      }
+    }
 
     await recalculateCart(cart, req.user);
     await cart.save();
+    
     await cart.populate("items.product");
 
-    // Fixed: Passing through the utility engine to return computed properties
     return res.status(200).json({
       success: true,
       message: "Cart updated successfully.",
-      cart: formatCartResponse(cart)
+      cart: formatCartResponse(cart) 
     });
 
   } catch (error) {
     next(error);
   }
 };
+
 
 
 //  Remove a specific item from cart
