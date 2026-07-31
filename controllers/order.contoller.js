@@ -7,6 +7,34 @@ const { recalculateCart, calculateCartLine, } = require("../service/tier.service
 const Payment = require("../models/payment.model");
 
 
+const formatOrderResponse = (hydratedOrder) => {
+  const responseOrder = hydratedOrder.toObject();
+
+  if (!responseOrder.orderLines || !Array.isArray(responseOrder.orderLines)) {
+    return responseOrder;
+  }
+
+  responseOrder.orderLines = responseOrder.orderLines.map((line) => {
+    const cartonSize = Number(line.carton_size_pcs || 1);
+    const totalPcs = Number(line.pcs || 0);
+
+    const cartons = Math.floor(totalPcs / cartonSize);
+    const loosePcs = totalPcs % cartonSize;
+
+    return {
+      ...line,
+      cartons,
+      loose_pcs: loosePcs,
+      display_quantity: loosePcs === 0
+        ? `${cartons} cartons`
+        : `${cartons} cartons and ${loosePcs} pcs`
+    };
+  });
+
+  return responseOrder;
+};
+
+
 const createOrder = async (req, res, next) => {
     const session = await mongoose.startSession();
 
@@ -209,22 +237,26 @@ const createOrder = async (req, res, next) => {
     }
 };
 
-const getMyOrders = async (req, res, next) => {
-    try {
-        const orders = await Order.find({
-            account: req.user._id,
-        })
-            .populate("orderLines")
-            .sort({ createdAt: -1 });
 
-        res.status(200).json({
-            success: true,
-            orders,
-        });
-    } catch (error) {
-        next(error);
-    }
+const getMyOrders = async (req, res, next) => {
+  try {
+    const orders = await Order.find({
+      account: req.user._id,
+    })
+      .populate("orderLines")
+      .sort({ createdAt: -1 });
+
+    const formattedOrders = orders.map(order => formatOrderResponse(order));
+
+    return res.status(200).json({
+      success: true,
+      orders: formattedOrders,
+    });
+  } catch (error) {
+    next(error);
+  }
 };
+
 
 
 const getSingleOrder = async (req, res, next) => {
