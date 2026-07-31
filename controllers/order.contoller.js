@@ -55,7 +55,6 @@ const createOrder = async (req, res, next) => {
             );
         }
 
-        // Recalculate cart using latest product data
         const {
             cart: updatedCart,
             productMap,
@@ -71,17 +70,11 @@ const createOrder = async (req, res, next) => {
                 [
                     {
                         account: req.user._id,
-
                         currency: updatedCart.currency,
-
                         total_cartons: updatedCart.total_cartons,
-
                         total_pcs: updatedCart.total_pcs,
-
                         total_amount: updatedCart.subtotal,
-
                         shippingAddress,
-
                         orderStatus: "AWAITING_PAYMENT",
                     },
                 ],
@@ -109,15 +102,29 @@ const createOrder = async (req, res, next) => {
         );
 
         const createdPayment = payment[0];
-
         createdOrder.payment = createdPayment._id;
+
+        // PRE-AGGREGATE DUPLICATE PRODUCTS TO DEFUSE UNIQUE INDEX COLLISION
+        const aggregatedItemsMap = {};
+        
+        for (const item of updatedCart.items) {
+            const productIdStr = item.product.toString();
+            if (!aggregatedItemsMap[productIdStr]) {
+                aggregatedItemsMap[productIdStr] = {
+                    product: item.product,
+                    pcs: 0
+                };
+            }
+            // Consolidate total units seamlessly
+            aggregatedItemsMap[productIdStr].pcs += Number(item.pcs || 0);
+        }
 
         const orderLineIds = [];
 
-        for (const item of updatedCart.items) {
-
-            const product =
-                productMap[item.product.toString()];
+        // Loop through the aggregated, mathematically unified item mappings safely
+        for (const productIdKey in aggregatedItemsMap) {
+            const item = aggregatedItemsMap[productIdKey];
+            const product = productMap[item.product.toString()];
 
             if (!product) {
                 throw new CustomError(
@@ -126,6 +133,7 @@ const createOrder = async (req, res, next) => {
                 );
             }
 
+            // Recalculate billing values using the aggregated totals
             const line = calculateCartLine(
                 req.user,
                 product,
@@ -141,9 +149,7 @@ const createOrder = async (req, res, next) => {
             }
 
             const stockBeforePurchase = product.stock_pcs;
-
             product.stock_pcs -= line.pcs;
-
             await product.save({ session });
 
             const orderLine = (
@@ -198,42 +204,32 @@ const createOrder = async (req, res, next) => {
         }
 
         createdOrder.orderLines = orderLineIds;
-
         await createdOrder.save({ session });
 
-        // Delete cart after successful order creation
+        // Delete user's temporary cart document after successful transaction commitments
         await Cart.findOneAndDelete(
-            {
-                user: req.user._id,
-            },
+            { user: req.user._id },
             { session }
         );
 
         await session.commitTransaction();
 
-        const completedOrder = await Order.findById(
-            createdOrder._id
-        )
+        const completedOrder = await Order.findById(createdOrder._id)
             .populate("account", "fullname email")
             .populate("payment")
             .populate("orderLines");
 
-        res.status(201).json({
+        return res.status(201).json({
             success: true,
             message: "Order created successfully.",
-            order: completedOrder,
+            order: formatOrderResponse(completedOrder), // Formatted to include cartons and loose pieces
         });
 
     } catch (error) {
-
         await session.abortTransaction();
-
         next(error);
-
     } finally {
-
         session.endSession();
-
     }
 };
 
