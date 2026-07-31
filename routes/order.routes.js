@@ -20,12 +20,12 @@ const {   createOrder,
 // ----- User routes -----
 router.post("/create", authenticate, createOrder);
 router.get("/user-orders", authenticate, getMyOrders);
-router.get("/:orderId", authenticate, getSingleOrder);
+router.get("/:id", authenticate, getSingleOrder);
 router.put("/:id/cancel", authenticate, cancelOrder);
 
 // Optional user update endpoints
-router.put("/:orderId/paid", authenticate, markOrderAsPaid);
-router.put("/:orderId/delivered", authenticate, authorize("admin"), updateOrderStatus);
+router.put("/:id/paid", authenticate, markOrderAsPaid);
+router.put("/:id/delivered", authenticate, authorize("admin"), updateOrderStatus);
 
 // ----- Admin routes -----
 // router.get("/admin/all", authenticate, authorize("admin"), getUserOrders); // all orders
