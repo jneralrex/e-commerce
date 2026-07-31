@@ -209,8 +209,7 @@ const getUserCart = async (req, res, next) => {
 
     return res.status(200).json({
       success: true,
-      cart: formatCartResponse(updatedCart, items)
-    });
+      cart: formatCartResponse(updatedCart, req.user)    });
   } catch (error) {
     next(error);
   }
