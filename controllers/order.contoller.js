@@ -254,7 +254,6 @@ const getMyOrders = async (req, res, next) => {
 };
 
 
-
 const getSingleOrder = async (req, res, next) => {
     try {
         const order = await Order.findById(req.params.id)
@@ -265,21 +264,24 @@ const getSingleOrder = async (req, res, next) => {
             throw new CustomError(404, "Order not found");
         }
 
+        const orderAccountId = order.account._id ? order.account._id.toString() : order.account.toString();
+
         if (
-            req.user.role !== "admin" &&
-            order.account.toString() !== req.user._id.toString()
+            // req.user.role !== "admin" &&
+            orderAccountId !== req.user._id.toString()
         ) {
-            throw new CustomError(403, "Unauthorized");
+            throw new CustomError(403, "Unauthorized access to order profile.");
         }
 
-        res.status(200).json({
+        return res.status(200).json({
             success: true,
-            order,
+            order: formatOrderResponse(order),
         });
     } catch (error) {
         next(error);
     }
 };
+
 
 
 const markOrderAsPaid = async (req, res, next) => {
