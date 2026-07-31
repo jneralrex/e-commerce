@@ -124,34 +124,10 @@ const resolveTier = (user, product, pcs) => {
 
 const resolveVisiblePrice = (product, user) => {
 
-    if (!user) {
-
-        const config = getTierConfig(product, TIERS.RETAILER);
-
-        return {
-            currency: config.currency,
-            price: config.unit_price,
-            tier: "public"
-        };
-
-    }
-
-    let tier = TIERS.RETAILER;
-
-    switch (user.assignedTier) {
-
-        case "distributor":
-            tier = TIERS.DISTRIBUTOR_LOCAL;
-            break;
-
-        case "international":
-            tier = TIERS.DISTRIBUTOR_INTERNATIONAL;
-            break;
-
-        default:
-            tier = TIERS.RETAILER;
-
-    }
+    const tier =
+        user?.assignedTier && TIER_ORDER.includes(user.assignedTier)
+            ? user.assignedTier
+            : TIERS.RETAILER;
 
     const config = getTierConfig(product, tier);
 
@@ -160,7 +136,6 @@ const resolveVisiblePrice = (product, user) => {
         price: config.unit_price,
         tier
     };
-
 };
 
 /**
