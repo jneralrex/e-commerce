@@ -23,15 +23,7 @@ router.get(
     verifyPayment
 );
 
-// Paystack webhook
-// This route MUST receive the raw request body
-// router.post(
-//     "/webhook",
-//     express.raw({
-//         type: "application/json",
-//     }),
-//     paystackWebhook
-// );
+//webhook route for paystack
 router.post(
     "/webhook",
     paystackWebhook

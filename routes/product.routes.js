@@ -8,20 +8,25 @@ const {
   getProductBySlug,
   updateProduct,
   deleteProduct,
-  toggleAvailability
+  toggleAvailability,
+  getAllProductsForAdmin
 } = require("../controllers/product.controller");
 const authenticate = require("../utils/authenticate");
+const authorize = require("../utils/authorize");
+
 const { uploadProductImages } = require("../utils/files/imagesUpload");
 
 // Public routes
 router.get("/", getAllProducts);
-router.get("/slug/:slug", getProductBySlug); // new slug route
+router.get("/admin", authenticate, authorize("admin"), getAllProductsForAdmin);
+router.get("/slug/:slug", getProductBySlug);
 router.get("/:id", getProductById);
 
 // Protected routes
 router.post(
   "/",
   authenticate,
+  authorize("admin"),
   uploadProductImages.fields([
     { name: "images", maxCount: 5 },
     { name: "otherImages", maxCount: 5 }
@@ -32,6 +37,7 @@ router.post(
 router.patch(
   "/:id",
   authenticate,
+  authorize("admin"),
   uploadProductImages.fields([
     { name: "images", maxCount: 5 },
     { name: "otherImages", maxCount: 5 }
@@ -39,7 +45,7 @@ router.patch(
   updateProduct
 );
 
-router.delete("/delete/:id", authenticate, deleteProduct);
-router.patch("/toggle/:id", authenticate, toggleAvailability);
+router.delete("/delete/:id", authenticate, authorize("admin"), deleteProduct);
+router.patch("/toggle/:id", authenticate, authorize("admin"), toggleAvailability);
 
 module.exports = router;

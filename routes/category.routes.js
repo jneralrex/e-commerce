@@ -15,7 +15,7 @@ const { uploadCategoryImages } = require("../utils/files/imagesUpload");
 router.post(
   "/",
   authenticate,
-  // authorize("admin"),
+  authorize("admin"),
   uploadCategoryImages.single("image"),
   createCategory
 );

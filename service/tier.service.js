@@ -347,9 +347,7 @@ const recalculateCart = async (cart, user) => {
         currencies.add(line.currency);
 
         calculatedItems.push({
-            productId: product._id,
             product,
-
             pcs: line.pcs,
             cartons: line.cartons,
             loose_pcs: line.loose_pcs,

@@ -408,6 +408,193 @@ const getAllProducts = async (req, res, next) => {
   }
 };
 
+// @desc Get all products with filters, pagination, search for admin
+// @route GET /api/admin/products
+// @access Public
+const getAllProductsForAdmin = async (req, res, next) => {
+  try {
+    const page = Math.max(1, Number(req.query.page) || 1);
+    const limit = Math.max(1, Number(req.query.limit) || 20);
+
+    const {
+      keyword,
+      category,
+      brand,
+      size,
+      color,
+      seller,
+      minStock,
+      maxStock,
+      minPrice,
+      maxPrice,
+      sort = "newest",
+    } = req.query;
+
+    const filter = {};
+
+    /**
+     * Keyword Search
+     */
+    if (keyword) {
+      const regex = new RegExp(keyword, "i");
+
+      filter.$or = [
+        { name: regex },
+        { sku: regex },
+        { barcode: regex },
+        { brand: regex },
+        { model: regex },
+        { tags: regex },
+      ];
+    }
+
+    /**
+     * Category
+     */
+    if (category) {
+      filter.category = category;
+    }
+
+    /**
+     * Seller
+     */
+    if (seller) {
+      filter.seller = seller;
+    }
+
+    /**
+     * Brand
+     */
+    if (brand) {
+      filter.brand = brand;
+    }
+
+    /**
+     * Colors
+     */
+    if (color) {
+      filter.colors = color;
+    }
+
+    /**
+     * Sizes
+     */
+    if (size) {
+      filter.sizes = size;
+    }
+
+    /**
+     * Stock Filtering
+     */
+    if (minStock || maxStock) {
+      filter.stock_pcs = {};
+
+      if (minStock) {
+        filter.stock_pcs.$gte = Number(minStock);
+      }
+
+      if (maxStock) {
+        filter.stock_pcs.$lte = Number(maxStock);
+      }
+    }
+
+    /**
+     * Price Filtering
+     * Searches across retailer price.
+     * (Can be changed to another tier if preferred)
+     */
+    if (minPrice || maxPrice) {
+      filter["pricing.retailer.unit_price"] = {};
+
+      if (minPrice) {
+        filter["pricing.retailer.unit_price"].$gte = Number(minPrice);
+      }
+
+      if (maxPrice) {
+        filter["pricing.retailer.unit_price"].$lte = Number(maxPrice);
+      }
+    }
+
+    /**
+     * Sorting
+     */
+    const sortMap = {
+      newest: { createdAt: -1 },
+      oldest: { createdAt: 1 },
+
+      name_asc: { name: 1 },
+      name_desc: { name: -1 },
+
+      stock_high: { stock_pcs: -1 },
+      stock_low: { stock_pcs: 1 },
+
+      retailer_price_low: {
+        "pricing.retailer.unit_price": 1,
+      },
+
+      retailer_price_high: {
+        "pricing.retailer.unit_price": -1,
+      },
+
+      wholesaler_price_low: {
+        "pricing.wholesaler.unit_price": 1,
+      },
+
+      wholesaler_price_high: {
+        "pricing.wholesaler.unit_price": -1,
+      },
+
+      distributor_local_low: {
+        "pricing.distributor_local.unit_price": 1,
+      },
+
+      distributor_local_high: {
+        "pricing.distributor_local.unit_price": -1,
+      },
+
+      distributor_international_low: {
+        "pricing.distributor_international.unit_price": 1,
+      },
+
+      distributor_international_high: {
+        "pricing.distributor_international.unit_price": -1,
+      },
+    };
+
+    const total = await Product.countDocuments(filter);
+
+    const products = await Product.find(filter)
+      .populate("category", "name")
+      .populate("seller", "username email fullname")
+      .select("-__v")
+      .sort(sortMap[sort] || sortMap.newest)
+      .skip((page - 1) * limit)
+      .limit(limit)
+      .lean();
+
+    const formattedProducts = products.map((product) => ({
+      ...product,
+
+      available:
+        product.isAvailable &&
+        product.stock_pcs >= product.carton_size_pcs,
+    }));
+
+    res.status(200).json({
+      success: true,
+
+      total,
+
+      page,
+
+      pages: Math.ceil(total / limit),
+
+      products: formattedProducts,
+    });
+  } catch (error) {
+    next(error);
+  }
+};
 
 // @desc Get product by ID
 // @route GET /api/products/:id
@@ -703,6 +890,7 @@ module.exports = {
   updateProduct,
   deleteProduct,
   getProductBySlug,
-  toggleAvailability
+  toggleAvailability,
+  getAllProductsForAdmin
 };
 

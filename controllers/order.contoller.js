@@ -254,6 +254,99 @@ const getMyOrders = async (req, res, next) => {
 };
 
 
+const getAllOrders = async (req, res, next) => {
+  try {
+    const page = Math.max(1, Number(req.query.page) || 1);
+    const limit = Math.max(1, Number(req.query.limit) || 20);
+
+    const {
+      orderStatus,
+      paymentStatus,
+      account,
+      payment_ref,
+      from,
+      to,
+      sort = "newest",
+    } = req.query;
+
+    const filter = {};
+
+    if (orderStatus) {
+      filter.orderStatus = orderStatus;
+    }
+
+    if (paymentStatus) {
+      filter.paymentStatus = paymentStatus;
+    }
+
+    if (account) {
+      filter.account = account;
+    }
+
+    if (payment_ref) {
+      filter.payment_ref = new RegExp(payment_ref, "i");
+    }
+
+    if (from || to) {
+      filter.createdAt = {};
+
+      if (from) {
+        filter.createdAt.$gte = new Date(from);
+      }
+
+      if (to) {
+        filter.createdAt.$lte = new Date(to);
+      }
+    }
+
+    const sortMap = {
+      newest: { createdAt: -1 },
+      oldest: { createdAt: 1 },
+
+      amount_high: { total_amount: -1 },
+      amount_low: { total_amount: 1 },
+    };
+
+    const total = await Order.countDocuments(filter);
+
+    const orders = await Order.find(filter)
+      .populate(
+        "account",
+        "fullname username email phone profilePics"
+      )
+      .populate("payment")
+      .populate({
+        path: "orderLines",
+        populate: {
+          path: "product",
+          select: "name slug images sku",
+        },
+      })
+      .sort(sortMap[sort] || sortMap.newest)
+      .skip((page - 1) * limit)
+      .limit(limit);
+
+    const formattedOrders = orders.map(order =>
+      formatOrderResponse(order)
+    );
+
+    return res.status(200).json({
+      success: true,
+
+      total,
+
+      page,
+
+      pages: Math.ceil(total / limit),
+
+      orders: formattedOrders,
+    });
+  } catch (error) {
+    next(error);
+  }
+};
+
+
 const getSingleOrder = async (req, res, next) => {
     try {
         const order = await Order.findById(req.params.id)
@@ -282,8 +375,6 @@ const getSingleOrder = async (req, res, next) => {
     }
 };
 
-
-
 const markOrderAsPaid = async (req, res, next) => {
     try {
         const order = await Order.findById(req.params.id);
@@ -308,7 +399,6 @@ const markOrderAsPaid = async (req, res, next) => {
     }
 };
 
-
 const updateOrderStatus = async (req, res, next) => {
     try {
         const { status } = req.body;
@@ -331,16 +421,6 @@ const updateOrderStatus = async (req, res, next) => {
         next(error);
     }
 };
-
-
-// const getMyOrders = async (req, res, next) => {
-//     try {
-//         const orders = await Order.find({ user: req.user._id }).sort({ createdAt: -1 });
-//         res.status(200).json({ success: true, data: orders });
-//     } catch (error) {
-//         next(error);
-//     }
-// };
 
 
 const cancelOrder = async (req, res, next) => {
@@ -524,7 +604,7 @@ const getAnalytics = async (req, res, next) => {
 
 module.exports = {
     createOrder,
-    //    getUserOrders,
+    getAllOrders,
     getSingleOrder,
     markOrderAsPaid,
     updateOrderStatus,
@@ -533,5 +613,4 @@ module.exports = {
     filterOrders,
     adminCancelOrder,
     getAnalytics,
-    // isAdmin
 };
