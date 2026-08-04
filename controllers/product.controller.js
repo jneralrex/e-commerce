@@ -619,6 +619,46 @@ const getProductById = async (req, res, next) => {
   }
 };
 
+// @desc Get product by ID
+// @route GET /api/admin/products/:id
+// @access Private (admin)
+const getProductByIdForAdmin = async (req, res, next) => {
+  try {
+    const product = await Product.findById(req.params.id)
+      .populate("category")
+      .populate("seller", "fullname username email role")
+      .populate({
+        path: "reviews",
+        populate: {
+          path: "user",
+          select: "fullname username profilePhoto"
+        }
+      });
+
+    if (!product) {
+      throw new CustomError(
+        404,
+        "Product not found",
+        "NotFoundError"
+      );
+    }
+
+    const available =
+      product.isAvailable &&
+      product.stock_pcs >= product.carton_size_pcs;
+
+    res.status(200).json({
+      success: true,
+      product: {
+        ...product.toObject(),
+        available
+      }
+    });
+
+  } catch (error) {
+    next(error);
+  }
+};
 
 // @desc Get product by slug
 // @route GET /api/products/slug/:slug
@@ -891,6 +931,7 @@ module.exports = {
   deleteProduct,
   getProductBySlug,
   toggleAvailability,
-  getAllProductsForAdmin
+  getAllProductsForAdmin,
+  getProductByIdForAdmin
 };
 

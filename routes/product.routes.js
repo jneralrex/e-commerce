@@ -9,7 +9,8 @@ const {
   updateProduct,
   deleteProduct,
   toggleAvailability,
-  getAllProductsForAdmin
+  getAllProductsForAdmin,
+  getProductByIdForAdmin
 } = require("../controllers/product.controller");
 const authenticate = require("../utils/authenticate");
 const authorize = require("../utils/authorize");
@@ -21,6 +22,8 @@ router.get("/", getAllProducts);
 router.get("/admin", authenticate, authorize("admin"), getAllProductsForAdmin);
 router.get("/slug/:slug", getProductBySlug);
 router.get("/:id", getProductById);
+router.get("/admin/:id", authenticate, authorize("admin"), getProductByIdForAdmin);
+
 
 // Protected routes
 router.post(
