@@ -65,27 +65,60 @@ const resolveQuantity = ({ pcs, cartons }, product) => {
 };
 
 //Cart response formatter
-const formatCartResponse = (hydratedCart) => {
-  const responseCart = hydratedCart.toObject();
 
-  responseCart.items = responseCart.items.map(item => {
-    const cartonSize = Number(item.product?.carton_size_pcs || 1);
-    const pieces = Number(item.pcs || 0);
 
-    const cartons = Math.floor(pieces / cartonSize);
-    const loosePcs = pieces % cartonSize;
+const formatCartResponse = (hydratedCart, user) => {
 
-    return {
-      ...item,
-      cartons,
-      loose_pcs: loosePcs,
-      display_quantity: loosePcs === 0
-        ? `${cartons} cartons`
-        : `${cartons} cartons and ${loosePcs} pcs`
-    };
-  });
+  const responseCart =
+    hydratedCart.toObject();
+
+  responseCart.items =
+    responseCart.items.map(item => {
+
+      const line =
+        calculateCartLine(
+          user,
+          item.product,
+          item.pcs
+        );
+
+      return {
+
+        ...item,
+
+        cartons:
+          line.cartons,
+
+        loose_pcs:
+          line.loose_pcs,
+
+        display_quantity:
+
+          line.loose_pcs === 0
+            ? `${line.cartons} cartons`
+            : `${line.cartons} cartons and ${line.loose_pcs} pcs`,
+
+        unit_price:
+          line.unit_price,
+
+        line_total:
+          line.line_total,
+
+        currency:
+          line.currency,
+
+        tier_used:
+          line.tier_used,
+
+        promotion:
+          line.promotion
+
+      };
+
+    });
 
   return responseCart;
+
 };
 
 // Add item to cart
@@ -114,11 +147,11 @@ const addToCart = async (req, res, next) => {
     );
 
     if (quantityPcs > product.stock_pcs) {
-    throw new CustomError(
+      throw new CustomError(
         400,
         `Only ${product.stock_pcs} pcs available.`
-    );
-  }
+      );
+    }
 
     let cart = await Cart.findOne({ user: req.user._id });
 
@@ -228,7 +261,7 @@ const updateCartItemQuantity = async (req, res, next) => {
       (item) => item.product.toString() === productId
     );
 
-   
+
     const isInternational =
       req.user.assignedTier ===
       "distributor_international";
@@ -307,17 +340,20 @@ const updateCartItemQuantity = async (req, res, next) => {
 
     await updatedCart.save();
 
-    await updatedCart.populate("items.product");
+    await updatedCart.populate(
+      "items.product"
+    );
 
     return res.status(200).json({
+
       success: true,
-      message: "Cart updated successfully.",
+
       cart: formatCartResponse(
         updatedCart,
         req.user
-      ),
-    });
+      )
 
+    });
   } catch (error) {
     next(error);
   }

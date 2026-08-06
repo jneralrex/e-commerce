@@ -243,21 +243,69 @@ const calculateCartLine = (user, product, pcs) => {
 
     pcs = Number(pcs);
 
-
     const tierResult = resolveTier(
         user,
         product,
         pcs
     );
 
-
     const config = getTierConfig(
         product,
         tierResult.tier
     );
 
+    const retailerPrice =
+        product.pricing.retailer.unit_price;
 
-    const line = {
+    const savingsPerPiece =
+        Math.max(
+            0,
+            retailerPrice - config.unit_price
+        );
+
+    const totalSavings =
+        savingsPerPiece * pcs;
+
+    let promotion = null;
+
+    if (
+        tierResult.tier !== TIERS.RETAILER
+    ) {
+
+        promotion = {
+
+            unlocked: true,
+
+            current_tier: tierResult.tier,
+
+            current_price: config.unit_price,
+
+            retailer_price: retailerPrice,
+
+            savings_per_piece: savingsPerPiece,
+
+            total_savings: totalSavings,
+
+            next_tier: tierResult.nextTier,
+
+            next_tier_price:
+                tierResult.nextTier
+                    ? product.pricing[tierResult.nextTier]?.unit_price
+                    : null,
+
+            next_tier_remaining:
+                tierResult.nextTierRemaining,
+
+            message:
+                tierResult.nextTier
+                    ? `You've unlocked ${tierResult.tier.replace(/_/g, " ")} pricing and saved ${config.currency} ${totalSavings.toLocaleString()}. Add ${tierResult.nextTierRemaining} more pcs to unlock ${tierResult.nextTier.replace(/_/g, " ")} pricing.`
+                    : `You've unlocked ${tierResult.tier.replace(/_/g, " ")} pricing and saved ${config.currency} ${totalSavings.toLocaleString()} on this product.`
+
+        };
+
+    }
+
+    return {
 
         pcs,
 
@@ -268,29 +316,33 @@ const calculateCartLine = (user, product, pcs) => {
         loose_pcs:
             pcs % product.carton_size_pcs,
 
-        unit_price: config.unit_price,
+        unit_price:
+            config.unit_price,
 
         line_total:
             config.unit_price * pcs,
 
-        currency: config.currency,
+        currency:
+            config.currency,
 
-        tier_used: tierResult.tier,
+        tier_used:
+            tierResult.tier,
 
-        base_tier: tierResult.currentTier,
+        base_tier:
+            tierResult.currentTier,
 
-        next_tier: tierResult.nextTier,
+        next_tier:
+            tierResult.nextTier,
 
         next_tier_remaining:
             tierResult.nextTierRemaining,
 
-        required_moq: config.moq
+        required_moq:
+            config.moq,
+
+        promotion
 
     };
-
-   
-
-    return line;
 
 };
 
@@ -322,7 +374,9 @@ const recalculateCart = async (cart, user) => {
 
     const products = await Product.find({
         _id: {
-            $in: cart.items.map(item => item.product)
+            $in: cart.items.map(
+                item => item.product
+            )
         }
     });
 
@@ -338,20 +392,19 @@ const recalculateCart = async (cart, user) => {
 
     const currencies = new Set();
 
-    const calculatedItems = [];
-
     for (const item of cart.items) {
 
-
         const product =
-            productMap[item.product.toString()];
+            productMap[
+                item.product.toString()
+            ];
 
-        const line = calculateCartLine(
-            user,
-            product,
-            item.pcs
-        );
-
+        const line =
+            calculateCartLine(
+                user,
+                product,
+                item.pcs
+            );
 
         item.pcs = line.pcs;
 
@@ -359,23 +412,21 @@ const recalculateCart = async (cart, user) => {
 
         subtotal += line.line_total;
 
-        currencies.add(line.currency);
-
+        currencies.add(
+            line.currency
+        );
 
     }
 
-
     cart.total_pcs = totalPcs;
+
     cart.subtotal = subtotal;
 
     cart.currency =
-        currencies.size === 1
-            ? [...currencies][0]
-            : [...currencies];
+        [...currencies][0];
 
     return {
         cart,
-        items: calculatedItems,
         productMap
     };
 
