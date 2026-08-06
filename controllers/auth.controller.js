@@ -202,8 +202,6 @@ const signUp = async (req, res, next) => {
         await session.commitTransaction();
         session.endSession();
 
-        console.log("Generated OTP:", otp);
-
         const emailHtmlBody = `
             <p>Hello <strong>${username}</strong>,</p>
 
@@ -266,13 +264,8 @@ const verifyOTP = async (req, res, next) => {
         const user = await User.findOne({ email: email.trim() }).select("+otp +otpExpiresAt");
 
 
-        console.log("Fetched user:", user); // Add this
-
         if (!user) throw new CustomError(401, "User not found", "AuthenticationError");
         if (user.isVerified) throw new CustomError(400, "User is already verified", "ValidationError");
-
-        console.log("Received OTP from request:", otp);
-        console.log("Stored OTP in DB:", user.otp);
 
         if (!otp || !user.otp) {
             throw new CustomError(401, "OTP expired or invalid", "AuthenticationError");

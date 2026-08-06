@@ -4,6 +4,7 @@ const CustomError = require("../utils/errors/customErrors");
 
 const {
   recalculateCart,
+  calculateCartLine,
 } = require("../service/tier.service");
 
 //Quantity response formatter
@@ -204,15 +205,22 @@ const updateCartItemQuantity = async (req, res, next) => {
     }
 
     const product = await Product.findById(productId);
+
     if (!product || !product.isAvailable) {
-      throw new CustomError(404, "Product not available.");
+      throw new CustomError(
+        404,
+        "Product not available."
+      );
     }
 
-    let cart = await Cart.findOne({ user: req.user._id });
+    let cart = await Cart.findOne({
+      user: req.user._id,
+    });
+
     if (!cart) {
       cart = new Cart({
         user: req.user._id,
-        items: []
+        items: [],
       });
     }
 
@@ -220,43 +228,100 @@ const updateCartItemQuantity = async (req, res, next) => {
       (item) => item.product.toString() === productId
     );
 
-    const quantityPcs = resolveQuantity ? resolveQuantity(req.body, product) : Number(pcs || 0);
+   
+    const isInternational =
+      req.user.assignedTier ===
+      "distributor_international";
+
+    const expectedCurrency = isInternational
+      ? "USD"
+      : "NGN";
+
+    const productCurrency = isInternational
+      ? product.pricing.distributor_international?.currency
+      : product.pricing.distributor_local?.currency;
+
+    if (!productCurrency) {
+      throw new CustomError(
+        400,
+        "Product pricing is not configured correctly.",
+        "ValidationError"
+      );
+    }
+
+    if (productCurrency !== expectedCurrency) {
+      throw new CustomError(
+        400,
+        `This product is sold in ${productCurrency}, but your account purchases in ${expectedCurrency}.`,
+        "CurrencyMismatchError"
+      );
+    }
+
+    const quantityPcs = resolveQuantity
+      ? resolveQuantity(req.body, product)
+      : Number(pcs || 0);
 
     if (quantityPcs > product.stock_pcs) {
-      throw new CustomError(400, `Only ${product.stock_pcs} pcs available.`);
+      throw new CustomError(
+        400,
+        `Only ${product.stock_pcs} pcs available.`
+      );
     }
 
+    /**
+     * Add / Update / Remove
+     */
     if (!item) {
+
       if (quantityPcs > 0) {
+
         cart.items.push({
           product: productId,
-          pcs: quantityPcs
+          pcs: quantityPcs,
         });
+
       }
+
     } else {
+
       if (quantityPcs <= 0) {
-        cart.items = cart.items.filter((i) => i.product.toString() !== productId);
+
+        cart.items = cart.items.filter(
+          (i) =>
+            i.product.toString() !== productId
+        );
+
       } else {
+
         item.pcs = quantityPcs;
+
       }
+
     }
 
-    await recalculateCart(cart, req.user);
-    await cart.save();
-    
-    await cart.populate("items.product");
+    const { cart: updatedCart } =
+      await recalculateCart(
+        cart,
+        req.user
+      );
+
+    await updatedCart.save();
+
+    await updatedCart.populate("items.product");
 
     return res.status(200).json({
       success: true,
       message: "Cart updated successfully.",
-      cart: formatCartResponse(cart) 
+      cart: formatCartResponse(
+        updatedCart,
+        req.user
+      ),
     });
 
   } catch (error) {
     next(error);
   }
 };
-
 
 
 //  Remove a specific item from cart

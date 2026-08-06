@@ -43,7 +43,6 @@ const createProduct = async (req, res, next) => {
 
       allowSelfService,
     } = req.body;
-    console.log("object body", req.body);
     const images =
       req.files?.images?.map(file => ({
         url: file.path,
@@ -129,14 +128,54 @@ const createProduct = async (req, res, next) => {
 
     if (pricing) {
 
-      Object.values(pricing).forEach(tier => {
+      const tiers = [
+        "retailer",
+        "wholesaler",
+        "distributor_local",
+        "distributor_international",
+      ];
 
-        tier.unit_price = Number(tier.unit_price);
+      for (const tier of tiers) {
 
-        tier.moq = Number(tier.moq);
+        pricing[tier].unit_price = Number(
+          pricing[tier].unit_price
+        );
 
-      });
+        pricing[tier].moq = Number(
+          pricing[tier].moq
+        );
 
+      }
+
+
+      if (
+        pricing.wholesaler.moq <= pricing.retailer.moq
+      ) {
+        throw new CustomError(
+          400,
+          "Wholesaler MOQ must be greater than Retailer MOQ."
+        );
+      }
+
+      if (
+        pricing.distributor_local.moq <=
+        pricing.wholesaler.moq
+      ) {
+        throw new CustomError(
+          400,
+          "Distributor Local MOQ must be greater than Wholesaler MOQ."
+        );
+      }
+
+      if (
+        pricing.distributor_international.moq <=
+        pricing.distributor_local.moq
+      ) {
+        throw new CustomError(
+          400,
+          "Distributor International MOQ must be greater than Distributor Local MOQ."
+        );
+      }
     }
 
     const product = await Product.create({
@@ -843,6 +882,37 @@ const updateProduct = async (req, res, next) => {
             `${tier} MOQ is invalid.`
           );
         }
+      }
+
+
+      if (
+        mergedPricing.wholesaler.moq <=
+        mergedPricing.retailer.moq
+      ) {
+        throw new CustomError(
+          400,
+          "Wholesaler MOQ must be greater than Retailer MOQ."
+        );
+      }
+
+      if (
+        mergedPricing.distributor_local.moq <=
+        mergedPricing.wholesaler.moq
+      ) {
+        throw new CustomError(
+          400,
+          "Distributor Local MOQ must be greater than Wholesaler MOQ."
+        );
+      }
+
+      if (
+        mergedPricing.distributor_international.moq <=
+        mergedPricing.distributor_local.moq
+      ) {
+        throw new CustomError(
+          400,
+          "Distributor International MOQ must be greater than Distributor Local MOQ."
+        );
       }
 
       product.pricing = mergedPricing;

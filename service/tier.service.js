@@ -3,7 +3,6 @@ const Product = require("../models/product.model");
 const CustomError = require("../utils/errors/customErrors");
 
 
-
 const getBaseTier = (user) => {
 
     if (
@@ -33,41 +32,63 @@ const getNextTier = (tier) => {
  * Distributor accounts always use their assigned tier.
  * Retailer/Wholesaler are resolved PER PRODUCT.
  */
+
 const resolveTier = (user, product, pcs) => {
 
     const pricing = product.pricing;
 
     if (!pricing) {
-
         throw new CustomError(
             400,
             `${product.name} has no pricing configured.`,
             "ValidationError"
         );
-
     }
 
     const baseTier = getBaseTier(user);
 
-    let appliedTier = baseTier;
-
     const startIndex = TIER_ORDER.indexOf(baseTier);
 
     /**
-     * Walk UP the ladder.
+     * NGN customers can only auto-upgrade
+     * as far as Distributor Local.
+     *
+     * International distributors may
+     * continue to Distributor International.
      */
+    const highestAutomaticTier =
+        baseTier === TIERS.DISTRIBUTOR_INTERNATIONAL
+            ? TIERS.DISTRIBUTOR_INTERNATIONAL
+            : TIERS.DISTRIBUTOR_LOCAL;
 
-    for (let i = startIndex + 1; i < TIER_ORDER.length; i++) {
+    const highestIndex =
+        TIER_ORDER.indexOf(highestAutomaticTier);
+
+    let appliedTier = baseTier;
+
+    /**
+     * Walk upward through tiers.
+     */
+    for (
+        let i = startIndex + 1;
+        i <= highestIndex;
+        i++
+    ) {
 
         const tier = TIER_ORDER[i];
 
         const config = pricing[tier];
 
-        if (!config) continue;
+      
+
+        if (!config) {
+            continue;
+        }
 
         if (pcs >= config.moq) {
 
             appliedTier = tier;
+
 
         } else {
 
@@ -78,25 +99,42 @@ const resolveTier = (user, product, pcs) => {
     }
 
     /**
-     * Validate minimum order of CURRENT tier.
+     * Validate MOQ of customer's own tier.
      */
-
     const currentConfig = pricing[baseTier];
 
-    const valid = pcs >= currentConfig.moq;
+    const valid =
+        pcs >= currentConfig.moq;
 
-    const nextTier = getNextTier(appliedTier);
+    /**
+     * Calculate next achievable tier.
+     */
+    let nextTier = getNextTier(appliedTier);
+
+    /**
+     * NGN customers should never
+     * see Distributor International.
+     */
+    if (
+        baseTier !== TIERS.DISTRIBUTOR_INTERNATIONAL &&
+        nextTier === TIERS.DISTRIBUTOR_INTERNATIONAL
+    ) {
+        nextTier = null;
+    }
 
     let remaining = 0;
 
-    if (nextTier && pricing[nextTier]) {
+    if (
+        nextTier &&
+        pricing[nextTier]
+    ) {
 
         remaining = Math.max(
             0,
             pricing[nextTier].moq - pcs
         );
 
-    }
+    };
 
     return {
 
@@ -112,14 +150,15 @@ const resolveTier = (user, product, pcs) => {
 
         message:
             !valid
-                ? `Minimum order for ${baseTier.replace("_", " ")} is ${currentConfig.moq} pcs.`
+                ? `Minimum order for ${baseTier.replace(/_/g, " ")} is ${currentConfig.moq} pcs.`
                 : appliedTier !== baseTier
-                    ? `Ordering at ${appliedTier.replace("_", " ")} pricing.`
-                    : `Ordering at ${baseTier.replace("_", " ")} pricing.`
+                    ? `Ordering at ${appliedTier.replace(/_/g, " ")} pricing.`
+                    : `Ordering at ${baseTier.replace(/_/g, " ")} pricing.`
 
     };
 
 };
+
 
 
 const resolveVisiblePrice = (product, user) => {
@@ -176,7 +215,6 @@ const getApplicablePrice = (product, tier) => {
 };
 
 
-
 /**
  * Currency.
  */
@@ -200,30 +238,11 @@ const isSelfService = (product, tier) => {
 /**
  * Calculate one cart line.
  */
-const calculateCartLine = (user, product, pcs) => {
 
-    if (!product.carton_size_pcs) {
-        throw new CustomError(
-            400,
-            `${product.name} has no carton size configured.`
-        );
-    }
+const calculateCartLine = (user, product, pcs) => {
 
     pcs = Number(pcs);
 
-    if (!Number.isFinite(pcs) || pcs < 1) {
-        throw new CustomError(
-            400,
-            "Quantity must be at least 1 piece."
-        );
-    }
-
-    const cartons = Math.floor(
-        pcs / product.carton_size_pcs
-    );
-
-    const loose_pcs =
-        pcs % product.carton_size_pcs;
 
     const tierResult = resolveTier(
         user,
@@ -231,31 +250,28 @@ const calculateCartLine = (user, product, pcs) => {
         pcs
     );
 
-    if (!tierResult.valid) {
-        throw new CustomError(
-            400,
-            tierResult.message
-        );
-    }
 
-    const config = getTierConfig(product, tierResult.tier);
+    const config = getTierConfig(
+        product,
+        tierResult.tier
+    );
 
-    return {
+
+    const line = {
 
         pcs,
 
-        cartons,
+        cartons: Math.floor(
+            pcs / product.carton_size_pcs
+        ),
 
-        loose_pcs,
+        loose_pcs:
+            pcs % product.carton_size_pcs,
 
-        unit_price: getApplicablePrice(product, tierResult.tier),
-
-        currency: getCurrency(product, tierResult.tier),
-
-        self_service: isSelfService(product, tierResult.tier),
+        unit_price: config.unit_price,
 
         line_total:
-            getApplicablePrice(product, tierResult.tier) * pcs,
+            config.unit_price * pcs,
 
         currency: config.currency,
 
@@ -271,6 +287,10 @@ const calculateCartLine = (user, product, pcs) => {
         required_moq: config.moq
 
     };
+
+   
+
+    return line;
 
 };
 
@@ -322,15 +342,9 @@ const recalculateCart = async (cart, user) => {
 
     for (const item of cart.items) {
 
-        const product = productMap[item.product.toString()];
 
-        if (!product) {
-            throw new CustomError(
-                404,
-                "One or more products no longer exist.",
-                "NotFoundError"
-            );
-        }
+        const product =
+            productMap[item.product.toString()];
 
         const line = calculateCartLine(
             user,
@@ -338,36 +352,18 @@ const recalculateCart = async (cart, user) => {
             item.pcs
         );
 
-        // Persist only schema fields
+
         item.pcs = line.pcs;
 
         totalPcs += line.pcs;
+
         subtotal += line.line_total;
 
         currencies.add(line.currency);
 
-        calculatedItems.push({
-            product,
-            pcs: line.pcs,
-            cartons: line.cartons,
-            loose_pcs: line.loose_pcs,
-
-            unit_price: line.unit_price,
-            line_total: line.line_total,
-            currency: line.currency,
-
-            tier_used: line.tier_used,
-            base_tier: line.base_tier,
-
-            required_moq: line.required_moq,
-
-            next_tier: line.next_tier,
-            next_tier_remaining: line.next_tier_remaining,
-
-            message: line.message
-        });
 
     }
+
 
     cart.total_pcs = totalPcs;
     cart.subtotal = subtotal;

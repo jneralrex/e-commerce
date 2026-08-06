@@ -99,11 +99,8 @@ const markPaymentAsFailed = async (
     payment.gateway_response =
         gateway?.raw || gateway || null;
 
-    console.log("Before save:", payment.status);
 
     const savedPayment = await payment.save();
-
-    console.log("After save:", savedPayment.status);
 
     order.paymentStatus = "FAILED";
 

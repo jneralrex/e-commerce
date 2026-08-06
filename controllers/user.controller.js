@@ -73,7 +73,6 @@ const updateUser = async (req, res, next) => {
 
 const deleteFromCloudinary = async (publicId) => {
     if (!publicId) {
-        console.warn("Public ID is missing for deletion");
         return false;
     }
 

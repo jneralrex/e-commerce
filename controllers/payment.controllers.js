@@ -258,27 +258,6 @@ const verifyPayment = async (req, res, next) => {
       );
     }
 
-    // Amount validation
-    console.log("========== PAYMENT VALIDATION ==========");
-
-    console.log({
-      gatewayAmount: gateway.amount,
-      paymentAmount: payment.amount,
-      gatewayCurrency: gateway.currency,
-      paymentCurrency: payment.currency,
-    });
-
-    console.log(
-      "Amount Match:",
-      gateway.amount === payment.amount
-    );
-
-    console.log(
-      "Currency Match:",
-      gateway.currency === payment.currency
-    );
-
-    console.log("========================================");
 
     if (
       gateway.amount !== payment.amount ||
@@ -328,11 +307,7 @@ const verifyPayment = async (req, res, next) => {
 
 
 const paystackWebhook = async (req, res, next) => {
-  console.log("========== WEBHOOK HIT ==========");
-  console.log("Headers:", req.headers);
-  console.log("Signature:", req.headers["x-paystack-signature"]);
   try {
-    console.log("Reached step 1");
 
     const signature =
       req.headers["x-paystack-signature"];
@@ -370,14 +345,10 @@ const paystackWebhook = async (req, res, next) => {
       );
     }
 
-    console.log("Reached step 2");
-    console.log("Signature valid:", isValid);
-
     const event = JSON.parse(
       req.rawBody.toString("utf8")
     );
-    console.log("Reached step 3");
-    console.log(event.event);
+
 
     const supportedEvents = [
       "charge.success",
@@ -388,10 +359,6 @@ const paystackWebhook = async (req, res, next) => {
     ];
 
     if (!supportedEvents.includes(event.event)) {
-
-      console.log(
-        `Ignoring Paystack event: ${event.event}`
-      );
 
       return res.status(200).json({
         success: true,
@@ -412,10 +379,6 @@ const paystackWebhook = async (req, res, next) => {
     const reference =
       event.data.reference;
 
-    console.log(
-      `Paystack webhook: ${event.event} -> ${reference}`
-    );
-
     const payment =
       await Payment.findOne({
         payment_ref: reference,
@@ -423,22 +386,12 @@ const paystackWebhook = async (req, res, next) => {
 
     if (!payment) {
 
-      console.log("Reached step 4");
-      console.log(event.data.reference);
-      if (payment) {
-        console.log("Payment status:", payment.status);
-      }
-      console.log(
-        `Payment not found for ${reference}`
-      );
-
       return res.status(200).json({
         success: true,
         message:
           "Payment not found. Ignored.",
       });
     }
-    console.log("Reached step 5");
     switch (event.event) {
 
       case "charge.success": {
@@ -480,14 +433,6 @@ const paystackWebhook = async (req, res, next) => {
           payment.currency
         ) {
 
-          console.error(
-            "Payment amount mismatch.",
-            {
-              gateway,
-              payment,
-            }
-          );
-
           return res.status(200).json({
             success: true,
             message:
@@ -521,10 +466,6 @@ const paystackWebhook = async (req, res, next) => {
 
       case "transfer.success": {
 
-        // Future payout support
-        console.log(
-          `Transfer successful: ${reference}`
-        );
 
         break;
       }
@@ -543,10 +484,6 @@ const paystackWebhook = async (req, res, next) => {
       }
       case "refund.failed": {
 
-        console.error(
-          `Refund failed for ${reference}`
-        );
-
         payment.gateway_response =
           event.data;
 
@@ -559,15 +496,12 @@ const paystackWebhook = async (req, res, next) => {
         break;
     }
 
-    console.log("Reached step 6");
     return res.status(200).json({
       success: true,
       message:
         "Webhook processed successfully.",
     });
   } catch (error) {
-    console.error("========== WEBHOOK ERROR ==========");
-    console.error(error.stack);
     next(error);
 
   }
