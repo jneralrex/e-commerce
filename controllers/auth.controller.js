@@ -5,6 +5,10 @@ const jwt = require("jsonwebtoken");
 const { config } = require("../config/config");
 const sendEmail = require("../utils/emails/emailSender");
 const { deleteFromCloudinary } = require("./user.controller");
+const axios = require("axios");
+const crypto = require("crypto");
+const { TIERS } = require("../constants/tier.constants");
+
 
 const generateOTP = () => ({
     otp: Math.floor(100000 + Math.random() * 900000).toString(),
@@ -37,261 +41,703 @@ const generateAndSendOTP = async (user) => {
 /** ===========================
  *  USER REGISTRATION (SEND OTP)
  *  =========================== */
-// const signUp = async (req, res, next) => {
-//     const session = await User.startSession();
-//     session.startTransaction();
-
-//     try {
-//         const { username, email, password } = req.body;
-
-//         const existingUser = await User.findOne({ email }).exec();
-//         if (existingUser) throw new CustomError(400, "User already exists", "AuthenticationError");
-
-//         const passwordRegex = /^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[!@#$%^&*(),.?":{}|<>])\S{8,}$/;
-//         if (!passwordRegex.test(password)) {
-//             throw new CustomError(401, "Password must be at least 8 characters long and contain at least one uppercase letter, one lowercase letter, and one number", "ValidationError");
-//         }
-
-//         const passwordHash = await bcrypt.hash(password, 10);
-//         const { otp, otpExpiresAt } = generateOTP();
-//         const hashedOTP = await bcrypt.hash(otp, 10);
-
-//         const newUser = new User({
-//             username,
-//             email,
-//             password: passwordHash,
-//             otp: hashedOTP,
-//             otpExpiresAt,
-//             isVerified: false,
-//         });
-
-//         await newUser.save({ session });
-//         await session.commitTransaction();
-//         session.endSession();
-
-//         if (!newUser) {
-//             throw new CustomError(500, "User instantiation pipeline tracking broke.", "DatabaseError");
-//         }
-
-//         console.log("Generated OTP for user:", otp);
-
-//         const emailHtmlBody = `
-//             <p>Hello <strong>${username}</strong>,</p>
-//             <p>Thank you for registering with Sartor Health. Please use the verification code below to activate your account:</p>
-//             <div style="background: #f4f7fb; padding: 24px; text-align: center; border-radius: 8px; margin: 25px 0; border: 1px dashed #e2e8f0;">
-//                 <span style="font-size: 36px; font-weight: bold; letter-spacing: 6px; color: #1a237e; font-family: monospace;">${otp}</span>
-//             </div>
-//             <p style="font-size: 14px; color: #718096;">This code is sensitive and will expire in 10 minutes.</p>
-//         `;
-
-//         const emailResult = await sendEmail(email, "Welcome to Sartor Health - Verify Your Account", emailHtmlBody, username);
-
-
-//         res.status(201).json({ success: true, message: "OTP sent to email. Please verify your account.", data: { email } });
-
-//     } catch (error) {
-//         if (session.inTransaction()) {
-//             await session.abortTransaction();
-//         }
-//         session.endSession();
-//         next(error);
-//     }
-// };
 const signUp = async (req, res, next) => {
-    const session = await User.startSession();
-    session.startTransaction();
+  const session = await User.startSession();
+  session.startTransaction();
 
-    try {
-        const {
-            username,
-            email,
-            password,
-            accountTypeRequested,
-            businessName,
-            territory,
-            projectedMonthlyVolumePcs
-        } = req.body;
+  try {
+    const {
+      businessName,
+      businessRegistrationNumber,
+      businessType,
+      country,
+      contactPerson,
+      phoneNumber,
+      email,
+      accountTypeRequested,
+      estimatedMonthlyOrderVolume,
+      businessDescription,
+      marketingOptIn,
+    } = req.body;
 
-        const existingUser = await User.findOne({ email });
+    /**
+     * ==========================================
+     * BASIC VALIDATION
+     * ==========================================
+     */
 
-        if (existingUser) {
-            throw new CustomError(
-                400,
-                "User already exists",
-                "AuthenticationError"
-            );
-        }
-
-        const allowedAccountTypes = [
-            "retailer",
-            "wholesaler",
-            "distributor",
-        ];
-
-        if (!allowedAccountTypes.includes(accountTypeRequested)) {
-            throw new CustomError(
-                400,
-                "Invalid account type selected.",
-                "ValidationError"
-            );
-        }
-
-        const passwordRegex =
-            /^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[!@#$%^&*(),.?":{}|<>])\S{8,}$/;
-
-        if (!passwordRegex.test(password)) {
-            throw new CustomError(
-                401,
-                "Password must contain uppercase, lowercase, number and special character.",
-                "ValidationError"
-            );
-        }
-
-        if (accountTypeRequested === "distributor") {
-            if (!territory || !projectedMonthlyVolumePcs) {
-                throw new CustomError(
-                    400,
-                    "Territory and projected monthly volume are required for distributor applications.",
-                    "ValidationError"
-                );
-            }
-        }
-
-        const hashedPassword = await bcrypt.hash(password, 10);
-
-        const { otp, otpExpiresAt } = generateOTP();
-
-        const hashedOTP = await bcrypt.hash(otp, 10);
-
-        const newUser = new User({
-            username,
-            businessName,
-            email,
-
-            password: hashedPassword,
-
-            role: "stockist",
-
-            accountTypeRequested,
-
-            status:
-                accountTypeRequested === "distributor"
-                    ? "PENDING"
-                    : "APPROVED",
-
-            assignedTier: null,
-
-            territory:
-                accountTypeRequested === "distributor"
-                    ? territory
-                    : null,
-
-            projectedMonthlyVolumePcs:
-                accountTypeRequested === "distributor"
-                    ? Number(projectedMonthlyVolumePcs)
-                    : 0,
-
-            otp: hashedOTP,
-            otpExpiresAt,
-
-            isVerified: false,
-        });
-
-        await newUser.save({ session });
-
-        await session.commitTransaction();
-        session.endSession();
-
-        const emailHtmlBody = `
-            <p>Hello <strong>${username}</strong>,</p>
-
-            <p>Welcome to Sartor Health.</p>
-
-            <p>Please verify your email using the OTP below.</p>
-
-            <div style="background:#f4f7fb;padding:24px;text-align:center;border-radius:8px;">
-                <span style="font-size:36px;font-weight:bold;letter-spacing:6px;">
-                    ${otp}
-                </span>
-            </div>
-
-            <p>This code expires in 10 minutes.</p>
-        `;
-
-        const emailResult = await sendEmail(
-            email,
-            "Verify Your Sartor Account",
-            emailHtmlBody,
-            username
-        );
-
-        if (!emailResult.success) {
-            throw new CustomError(
-                502,
-                "Failed to send verification email.",
-                "GatewayError"
-            );
-        }
-
-        res.status(201).json({
-            success: true,
-            message:
-                "Registration successful. Please verify your email.",
-            data: {
-                email,
-                accountTypeRequested,
-            },
-        });
-    } catch (error) {
-        if (session.inTransaction()) {
-            await session.abortTransaction();
-        }
-
-        session.endSession();
-
-        next(error);
+    if (!businessName?.trim()) {
+      throw new CustomError(
+        400,
+        "Business name is required.",
+        "ValidationError"
+      );
     }
-};
 
+    if (!businessRegistrationNumber?.trim()) {
+      throw new CustomError(
+        400,
+        "Business registration number is required.",
+        "ValidationError"
+      );
+    }
+
+    if (!businessType?.trim()) {
+      throw new CustomError(
+        400,
+        "Business type is required.",
+        "ValidationError"
+      );
+    }
+
+    if (!country?.trim()) {
+      throw new CustomError(
+        400,
+        "Country is required.",
+        "ValidationError"
+      );
+    }
+
+    if (!contactPerson?.trim()) {
+      throw new CustomError(
+        400,
+        "Contact person is required.",
+        "ValidationError"
+      );
+    }
+
+    if (!phoneNumber?.trim()) {
+      throw new CustomError(
+        400,
+        "Phone / WhatsApp number is required.",
+        "ValidationError"
+      );
+    }
+
+    if (!email?.trim()) {
+      throw new CustomError(
+        400,
+        "Business email is required.",
+        "ValidationError"
+      );
+    }
+
+    /**
+     * ==========================================
+     * EMAIL VALIDATION
+     * ==========================================
+     */
+
+    const normalizedEmail = email
+      .trim()
+      .toLowerCase();
+
+    const emailRegex =
+      /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+
+    if (!emailRegex.test(normalizedEmail)) {
+      throw new CustomError(
+        400,
+        "Please provide a valid business email.",
+        "ValidationError"
+      );
+    }
+
+    /**
+     * ==========================================
+     * ACCOUNT / TIER VALIDATION
+     * ==========================================
+     *
+     * Frontend sends the actual tier:
+     *
+     * retailer
+     * wholesaler
+     * distributor_local
+     * distributor_international
+     */
+
+    const allowedTiers = [
+      TIERS.RETAILER,
+      TIERS.WHOLESALER,
+      TIERS.DISTRIBUTOR_LOCAL,
+      TIERS.DISTRIBUTOR_INTERNATIONAL,
+    ];
+
+    if (!allowedTiers.includes(accountTypeRequested)) {
+      throw new CustomError(
+        400,
+        "Invalid partnership type selected.",
+        "ValidationError"
+      );
+    }
+
+    /**
+     * ==========================================
+     * CHECK EXISTING EMAIL
+     * ==========================================
+     */
+
+    const existingUser = await User.findOne({
+      email: normalizedEmail,
+    });
+
+    if (existingUser) {
+      throw new CustomError(
+        400,
+        "An account already exists with this email.",
+        "AuthenticationError"
+      );
+    }
+
+    /**
+     * ==========================================
+     * ACCOUNT STATUS
+     * ==========================================
+     *
+     * Distributor applications require manual
+     * approval.
+     *
+     * Retailer and wholesaler applications
+     * follow the normal approved workflow.
+     */
+
+    const status =
+      accountTypeRequested === TIERS.DISTRIBUTOR_LOCAL ||
+      accountTypeRequested === TIERS.DISTRIBUTOR_INTERNATIONAL
+        ? "PENDING"
+        : "APPROVED";
+
+    /**
+     * ==========================================
+     * INITIAL PASSWORD
+     * ==========================================
+     *
+     * The frontend does not collect a password.
+     *
+     * We create an internal temporary password
+     * so the User document satisfies the password
+     * requirement.
+     *
+     * The plaintext password is NEVER stored.
+     *
+     * A new temporary password will be generated
+     * and emailed after OTP verification.
+     */
+
+   
+    
+
+    /**
+     * ==========================================
+     * OTP
+     * ==========================================
+     */
+
+    const {
+      otp,
+      otpExpiresAt,
+    } = generateOTP();
+
+    const hashedOTP =
+      await bcrypt.hash(
+        otp,
+        10
+      );
+
+    /**
+     * ==========================================
+     * CREATE USER
+     * ==========================================
+     */
+
+    const newUser = new User({
+
+      // Business name serves as username
+      username:
+        businessName.trim(),
+
+      businessName:
+        businessName.trim(),
+
+      businessRegistrationNumber:
+        businessRegistrationNumber.trim(),
+
+      businessType:
+        businessType.trim(),
+
+      country:
+        country.trim(),
+
+      contactPerson:
+        contactPerson.trim(),
+
+      phoneNumber:
+        phoneNumber.trim(),
+
+      email:
+        normalizedEmail,
+
+      password:
+        hashedPassword,
+
+      role:
+        "stockist",
+
+      /**
+       * Actual tier submitted by frontend.
+       */
+      accountTypeRequested:
+        accountTypeRequested,
+
+      status,
+
+      /**
+       * Purchasing engine uses this to determine
+       * the user's base tier.
+       */
+      assignedTier:
+        accountTypeRequested,
+
+      /**
+       * User must change the temporary password
+       * after receiving it.
+       */
+      mustChangePassword:
+        true,
+
+      territory:
+        null,
+
+      projectedMonthlyVolumePcs:
+        0,
+
+      estimatedMonthlyOrderVolume:
+        estimatedMonthlyOrderVolume?.trim() ||
+        null,
+
+      businessDescription:
+        businessDescription?.trim() ||
+        null,
+
+      marketingOptIn:
+        marketingOptIn === true ||
+        marketingOptIn === "true",
+
+      otp:
+        hashedOTP,
+
+      otpExpiresAt,
+
+      isVerified:
+        false,
+    });
+
+    await newUser.save({
+      session,
+    });
+
+    await session.commitTransaction();
+    session.endSession();
+
+    /**
+     * ==========================================
+     * SEND OTP EMAIL
+     * ==========================================
+     */
+
+    const emailHtmlBody = `
+      <p>
+        Hello <strong>${contactPerson.trim()}</strong>,
+      </p>
+
+      <p>
+        Thank you for applying for partner
+        access with Sartor Health.
+      </p>
+
+      <p>
+        Please verify your business email
+        using the OTP below:
+      </p>
+
+      <div
+        style="
+          background:#f4f7fb;
+          padding:24px;
+          text-align:center;
+          border-radius:8px;
+        "
+      >
+        <span
+          style="
+            font-size:36px;
+            font-weight:bold;
+            letter-spacing:6px;
+          "
+        >
+          ${otp}
+        </span>
+      </div>
+
+      <p>
+        This verification code expires in
+        10 minutes.
+      </p>
+
+      <p>
+        After verification, you will receive
+        a temporary password by email.
+      </p>
+
+      <p>
+        You will be required to change this
+        password when you first sign in.
+      </p>
+    `;
+
+    const emailResult =
+      await sendEmail(
+        normalizedEmail,
+        "Verify Your Sartor Health Partner Application",
+        emailHtmlBody,
+        contactPerson.trim()
+      );
+
+    if (!emailResult.success) {
+      throw new CustomError(
+        502,
+        "Application was submitted, but we could not send the verification email.",
+        "GatewayError"
+      );
+    }
+
+    /**
+     * ==========================================
+     * RESPONSE
+     * ==========================================
+     */
+
+    return res.status(201).json({
+      success: true,
+
+      message:
+        "Partner application submitted successfully. Please verify your email.",
+
+      data: {
+        email:
+          normalizedEmail,
+
+        accountTypeRequested:
+          accountTypeRequested,
+
+        assignedTier:
+          accountTypeRequested,
+
+        businessName:
+          businessName.trim(),
+
+        status,
+      },
+    });
+
+  } catch (error) {
+
+    if (session.inTransaction()) {
+      await session.abortTransaction();
+    }
+
+    session.endSession();
+
+    next(error);
+  }
+};
 
 
 /** ==============================
  *  VERIFY OTP & ACTIVATE ACCOUNT
  *  ============================== */
+
 const verifyOTP = async (req, res, next) => {
-    try {
-        const { email, otp } = req.body;
-        const user = await User.findOne({ email: email.trim() }).select("+otp +otpExpiresAt");
+  try {
+    const {
+      email,
+      otp,
+    } = req.body;
 
-
-        if (!user) throw new CustomError(401, "User not found", "AuthenticationError");
-        if (user.isVerified) throw new CustomError(400, "User is already verified", "ValidationError");
-
-        if (!otp || !user.otp) {
-            throw new CustomError(401, "OTP expired or invalid", "AuthenticationError");
-        }
-
-        // Check if OTP is expired
-        if (Date.now() > user.otpExpiresAt) {
-            await generateAndSendOTP(user);
-            return res.status(400).json({ success: false, message: "OTP expired. A new OTP has been sent." });
-        }
-
-        // Verify OTP (Ensure it's a string)
-        const otpMatch = await bcrypt.compare(otp.toString(), user.otp);
-        if (!otpMatch) throw new CustomError(401, "Invalid OTP", "AuthenticationError");
-
-        // Activate account
-        user.isVerified = true;
-        user.otp = null;
-        user.otpExpiresAt = null;
-        await user.save();
-
-        res.status(200).json({ success: true, message: "Account verified successfully" });
-
-    } catch (error) {
-        next(error);
+    if (!email?.trim()) {
+      throw new CustomError(
+        400,
+        "Email is required.",
+        "ValidationError"
+      );
     }
+
+    if (!otp) {
+      throw new CustomError(
+        400,
+        "OTP is required.",
+        "ValidationError"
+      );
+    }
+
+    const normalizedEmail =
+      email.trim().toLowerCase();
+
+    const user =
+      await User.findOne({
+        email: normalizedEmail,
+      }).select(
+        "+otp +otpExpiresAt +password"
+      );
+
+    if (!user) {
+      throw new CustomError(
+        401,
+        "User not found.",
+        "AuthenticationError"
+      );
+    }
+
+    if (user.isVerified) {
+      throw new CustomError(
+        400,
+        "User is already verified.",
+        "ValidationError"
+      );
+    }
+
+    if (!user.otp || !user.otpExpiresAt) {
+      throw new CustomError(
+        401,
+        "OTP expired or invalid.",
+        "AuthenticationError"
+      );
+    }
+
+    /**
+     * ==========================================
+     * CHECK OTP EXPIRATION
+     * ==========================================
+     */
+
+    if (
+      Date.now() >
+      new Date(user.otpExpiresAt).getTime()
+    ) {
+
+      await generateAndSendOTP(user);
+
+      return res.status(400).json({
+        success: false,
+        message:
+          "OTP expired. A new OTP has been sent to your email.",
+      });
+    }
+
+    /**
+     * ==========================================
+     * VERIFY OTP
+     * ==========================================
+     */
+
+    const otpMatch =
+      await bcrypt.compare(
+        otp.toString(),
+        user.otp
+      );
+
+    if (!otpMatch) {
+      throw new CustomError(
+        401,
+        "Invalid OTP.",
+        "AuthenticationError"
+      );
+    }
+
+    /**
+     * ==========================================
+     * GENERATE TEMPORARY PASSWORD
+     * ==========================================
+     *
+     * This password is generated ONLY after
+     * successful email verification.
+     *
+     * Plaintext exists only in memory long enough
+     * to send the email.
+     */
+
+    const temporaryPassword =
+      `${crypto.randomBytes(12).toString("base64url")}Aa1!`;
+
+    const hashedPassword =
+      await bcrypt.hash(
+        temporaryPassword,
+        10
+      );
+
+    /**
+     * ==========================================
+     * ACTIVATE ACCOUNT
+     * ==========================================
+     */
+
+    user.isVerified = true;
+
+    user.otp = null;
+    user.otpExpiresAt = null;
+
+    user.password =
+      hashedPassword;
+
+    user.mustChangePassword =
+      true;
+
+    await user.save();
+
+    /**
+     * ==========================================
+     * SEND TEMPORARY PASSWORD
+     * ==========================================
+     */
+
+    const passwordEmailBody = `
+      <p>
+        Hello <strong>${user.contactPerson}</strong>,
+      </p>
+
+      <p>
+        Your Sartor Health partner account has
+        been successfully verified.
+      </p>
+
+      <p>
+        Your temporary password is:
+      </p>
+
+      <div
+        style="
+          background:#f4f7fb;
+          padding:24px;
+          text-align:center;
+          border-radius:8px;
+          margin:20px 0;
+        "
+      >
+        <span
+          style="
+            font-size:24px;
+            font-weight:bold;
+            letter-spacing:2px;
+          "
+        >
+          ${temporaryPassword}
+        </span>
+      </div>
+
+      <p>
+        Your username is your registered business
+        name:
+      </p>
+
+      <div
+        style="
+          background:#f4f7fb;
+          padding:16px;
+          border-radius:8px;
+          margin:15px 0;
+        "
+      >
+        <strong>${user.businessName}</strong>
+      </div>
+
+      <p>
+        Please use these credentials to sign in.
+      </p>
+
+      <p>
+        For security reasons, you will be required
+        to change your temporary password after
+        your first successful login.
+      </p>
+
+      ${
+        user.status === "PENDING"
+          ? `
+            <p>
+              Your account is currently pending
+              partner approval. You may sign in,
+              but access to purchasing features
+              will remain subject to your account
+              approval.
+            </p>
+          `
+          : ""
+      }
+
+      <p>
+        If you did not submit this application,
+        please contact Sartor Health support
+        immediately.
+      </p>
+    `;
+
+    const emailResult =
+      await sendEmail(
+        user.email,
+        "Your Sartor Health Temporary Password",
+        passwordEmailBody,
+        user.contactPerson
+      );
+
+    if (!emailResult.success) {
+      /**
+       * The account is already verified at this
+       * point, but the password email failed.
+       *
+       * Do NOT return the temporary password in
+       * the API response.
+       */
+
+      throw new CustomError(
+        502,
+        "Your email has been verified, but we could not send your temporary password. Please request a new password.",
+        "GatewayError"
+      );
+    }
+
+    /**
+     * ==========================================
+     * RESPONSE
+     * ==========================================
+     */
+
+    return res.status(200).json({
+      success: true,
+
+      message:
+        "Account verified successfully. A temporary password has been sent to your email. Please use it to sign in and change your password.",
+
+      data: {
+        email:
+          user.email,
+
+        username:
+          user.businessName,
+
+        assignedTier:
+          user.assignedTier,
+
+        mustChangePassword:
+          true,
+
+        status:
+          user.status,
+      },
+    });
+
+  } catch (error) {
+    next(error);
+  }
 };
 
 /** ===========================
@@ -318,167 +764,257 @@ const resendOTP = async (req, res, next) => {
 /** ===========================
  *  USER LOGIN (GENERATE TOKENS)
  *  =========================== */
-// const signIn = async (req, res, next) => {
-//     try {
-//         const { email, password } = req.body;
 
-//         if (!email && !password) throw new CustomError(400, "Invalid email or password", "AuthenticationError");
-//         if (!email) throw new CustomError(400, "Invalid email or password", "AuthenticationError");
-//         if (!password) throw new CustomError(400, "Invalid email or password", "AuthenticationError");
-//         const passwordRegex = /^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[!@#$%^&*(),.?":{}|<>])\S{8,}$/;
-//         if (!passwordRegex.test(password)) {
-//             throw new CustomError(400, "Invalid email or password", "AuthenticationError");
-//         }
-//         if (!email || !password) {
-//             throw new CustomError(400, "Invalid email or password", "AuthenticationError");
-//         }
-//         if (!email.match(/^\S+@\S+\.\S+$/)) {
-//             throw new CustomError(400, "Invalid email or password", "AuthenticationError");
-//         }
-//         const user = await User.findOne({ email }).select("+password +refreshToken");
 
-//         if (!user) throw new CustomError(401, "Invalid email or password", "AuthenticationError");
-//         if (!user.isVerified) throw new CustomError(400, "Account not verified", "AuthenticationError");
-
-//         const passwordMatch = await bcrypt.compare(password, user.password);
-//         if (!passwordMatch) throw new CustomError(400, "Invalid email or password", "AuthenticationError");
-
-//         // Generate new tokens
-//         const accessToken = jwt.sign({ id: user._id }, config.jwt_secret, { expiresIn: "15m" });
-//         const refreshToken = jwt.sign({ id: user._id }, config.refresh_secret, { expiresIn: "7d" });
-
-//         // Store refresh token in DB
-//         user.refreshToken = refreshToken;
-//         await user.save();
-
-//         // Send refresh token as HTTP-only cookie
-//         const isProduction = process.env.NODE_ENV === "production";
-//         res.cookie("refreshToken", refreshToken, {
-//             httpOnly: true,
-//             secure: isProduction,
-//             sameSite: "Strict",
-//             maxAge: 7 * 24 * 60 * 60 * 1000
-//         });
-
-//         res.status(200).json({ success: true, accessToken, user: { username: user.username, email: user.email } });
-
-//     } catch (error) {
-//         next(error);
-//     }
-// };
 const signIn = async (req, res, next) => {
-    try {
-        const { email, password } = req.body;
+  try {
+    const { email, password } = req.body;
 
-        if (!email || !password) {
-            throw new CustomError(
-                400,
-                "Invalid email or password",
-                "AuthenticationError"
-            );
-        }
+    /**
+     * ==========================================
+     * BASIC VALIDATION
+     * ==========================================
+     */
 
-        const user = await User.findOne({ email })
-            .select("+password +refreshToken");
-
-        if (!user) {
-            throw new CustomError(
-                401,
-                "Invalid email or password",
-                "AuthenticationError"
-            );
-        }
-
-        if (!user.isVerified) {
-            throw new CustomError(
-                401,
-                "Account not verified",
-                "AuthenticationError"
-            );
-        }
-
-        if (user.status === "SUSPENDED") {
-            throw new CustomError(
-                403,
-                "Your account has been suspended. Please contact support.",
-                "AuthenticationError"
-            );
-        }
-
-        const passwordMatch = await bcrypt.compare(
-            password,
-            user.password
-        );
-
-        if (!passwordMatch) {
-            throw new CustomError(
-                401,
-                "Invalid email or password",
-                "AuthenticationError"
-            );
-        }
-
-        const accessToken = jwt.sign(
-            {
-                id: user._id,
-                role: user.role,
-            },
-            config.jwt_secret,
-            {
-                expiresIn: "15m",
-            }
-        );
-
-        const refreshToken = jwt.sign(
-            {
-                id: user._id,
-            },
-            config.refresh_secret,
-            {
-                expiresIn: "7d",
-            }
-        );
-
-        user.refreshToken = refreshToken;
-
-        await user.save();
-
-        res.cookie("refreshToken", refreshToken, {
-            httpOnly: true,
-            secure: true,
-            sameSite: "none",
-            maxAge: 7 * 24 * 60 * 60 * 1000
-        });
-
-        res.status(200).json({
-            success: true,
-            accessToken,
-
-            user: {
-                id: user._id,
-                username: user.username,
-                businessName: user.businessName,
-                email: user.email,
-
-                role: user.role,
-
-                status: user.status,
-
-                assignedTier: user.assignedTier,
-
-                accountTypeRequested:
-                    user.accountTypeRequested,
-
-                territory: user.territory,
-
-                monthlyCommitmentPcs:
-                    user.monthlyCommitmentPcs,
-            },
-        });
-    } catch (error) {
-        next(error);
+    if (!email?.trim() || !password) {
+      throw new CustomError(
+        400,
+        "Invalid email or password",
+        "AuthenticationError"
+      );
     }
+
+    const normalizedEmail =
+      email.trim().toLowerCase();
+
+    /**
+     * ==========================================
+     * FIND USER
+     * ==========================================
+     */
+
+    const user = await User.findOne({
+      email: normalizedEmail,
+    }).select(
+      "+password +refreshToken"
+    );
+
+    if (!user) {
+      throw new CustomError(
+        401,
+        "Invalid email or password",
+        "AuthenticationError"
+      );
+    }
+
+    /**
+     * ==========================================
+     * EMAIL VERIFICATION
+     * ==========================================
+     */
+
+    if (!user.isVerified) {
+      throw new CustomError(
+        401,
+        "Account not verified",
+        "AuthenticationError"
+      );
+    }
+
+    /**
+     * ==========================================
+     * ACCOUNT STATUS
+     * ==========================================
+     */
+
+    if (user.status === "SUSPENDED") {
+      throw new CustomError(
+        403,
+        "Your account has been suspended. Please contact support.",
+        "AuthenticationError"
+      );
+    }
+
+    /**
+     * ==========================================
+     * BLOCKED ACCOUNT
+     * ==========================================
+     */
+
+    if (user.isBlocked || user.status === "BLOCKED") {
+      throw new CustomError(
+        403,
+        "Your account has been blocked. Please contact support.",
+        "AuthenticationError"
+      );
+    }
+
+    /**
+     * ==========================================
+     * PASSWORD
+     * ==========================================
+     */
+
+    const passwordMatch =
+      await bcrypt.compare(
+        password,
+        user.password
+      );
+
+    if (!passwordMatch) {
+      throw new CustomError(
+        401,
+        "Invalid email or password",
+        "AuthenticationError"
+      );
+    }
+
+    /**
+     * ==========================================
+     * ACCESS TOKEN
+     * ==========================================
+     */
+
+    const accessToken = jwt.sign(
+      {
+        id: user._id,
+        role: user.role,
+      },
+      config.jwt_secret,
+      {
+        expiresIn: "15m",
+      }
+    );
+
+    /**
+     * ==========================================
+     * REFRESH TOKEN
+     * ==========================================
+     */
+
+    const refreshToken = jwt.sign(
+      {
+        id: user._id,
+      },
+      config.refresh_secret,
+      {
+        expiresIn: "7d",
+      }
+    );
+
+    user.refreshToken =
+      refreshToken;
+
+    await user.save();
+
+    /**
+     * ==========================================
+     * REFRESH TOKEN COOKIE
+     * ==========================================
+     */
+
+    res.cookie(
+      "refreshToken",
+      refreshToken,
+      {
+        httpOnly: true,
+        secure: true,
+        sameSite: "none",
+        maxAge:
+          7 *
+          24 *
+          60 *
+          60 *
+          1000,
+      }
+    );
+
+    /**
+     * ==========================================
+     * RESPONSE
+     * ==========================================
+     */
+
+    return res.status(200).json({
+      success: true,
+
+      accessToken,
+
+      user: {
+        id: user._id,
+
+        username:
+          user.username,
+
+        businessName:
+          user.businessName,
+
+        businessRegistrationNumber:
+          user.businessRegistrationNumber,
+
+        businessType:
+          user.businessType,
+
+        country:
+          user.country,
+
+        contactPerson:
+          user.contactPerson,
+
+        email:
+          user.email,
+
+        phoneNumber:
+          user.phoneNumber,
+
+        role:
+          user.role,
+
+        status:
+          user.status,
+
+        /**
+         * Purchasing engine uses this
+         * as the user's base tier.
+         */
+        assignedTier:
+          user.assignedTier,
+
+        accountTypeRequested:
+          user.accountTypeRequested,
+
+        territory:
+          user.territory,
+
+        monthlyCommitmentPcs:
+          user.monthlyCommitmentPcs,
+
+        estimatedMonthlyOrderVolume:
+          user.estimatedMonthlyOrderVolume,
+
+        businessDescription:
+          user.businessDescription,
+
+        marketingOptIn:
+          user.marketingOptIn,
+
+        distributorApplication:
+          user.distributorApplication,
+
+        /**
+         * Frontend uses this to determine
+         * whether the user must change the
+         * temporary password.
+         */
+        mustChangePassword:
+          user.mustChangePassword,
+      },
+    });
+  } catch (error) {
+    next(error);
+  }
 };
+
 
 
 /** ===========================

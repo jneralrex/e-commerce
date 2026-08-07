@@ -11,6 +11,31 @@ const userSchema = new mongoose.Schema(
 
     businessName: {
       type: String,
+      required: true,
+      trim: true,
+    },
+
+    businessRegistrationNumber: {
+      type: String,
+      required: true,
+      trim: true,
+    },
+
+    businessType: {
+      type: String,
+      required: true,
+      trim: true,
+    },
+
+    country: {
+      type: String,
+      required: true,
+      trim: true,
+    },
+
+    contactPerson: {
+      type: String,
+      required: true,
       trim: true,
     },
 
@@ -30,6 +55,7 @@ const userSchema = new mongoose.Schema(
 
     phoneNumber: {
       type: String,
+      required: true,
       trim: true,
     },
 
@@ -38,13 +64,9 @@ const userSchema = new mongoose.Schema(
       public_id: String,
     },
 
-    // ======================================================
-    // ACCOUNT TYPE
-    // ======================================================
-
     role: {
       type: String,
-      enum: ["user","stockist", "admin"],
+      enum: ["user", "stockist", "admin"],
       default: "user",
     },
 
@@ -53,13 +75,10 @@ const userSchema = new mongoose.Schema(
       enum: [
         "retailer",
         "wholesaler",
-        "distributor"
-      ]
+        "distributor_local",
+        "distributor_international",
+      ],
     },
-
-    // ======================================================
-    // DISTRIBUTOR ACCOUNT
-    // ======================================================
 
     assignedTier: {
       type: String,
@@ -70,6 +89,39 @@ const userSchema = new mongoose.Schema(
         "distributor_international",
       ],
       default: null,
+    },
+
+    status: {
+      type: String,
+      enum: [
+        "PENDING",
+        "APPROVED",
+        "SUSPENDED",
+        "BLOCKED",
+      ],
+      default: "APPROVED",
+    },
+
+    isBlocked: {
+      type: Boolean,
+      default: false,
+    },
+
+    estimatedMonthlyOrderVolume: {
+      type: String,
+      trim: true,
+      default: null,
+    },
+
+    businessDescription: {
+      type: String,
+      trim: true,
+      default: null,
+    },
+
+    marketingOptIn: {
+      type: Boolean,
+      default: false,
     },
 
     territory: {
@@ -83,19 +135,25 @@ const userSchema = new mongoose.Schema(
       default: null,
     },
 
-    status: {
-      type: String,
-      enum: [
-        "PENDING",
-        "APPROVED",
-        "SUSPENDED",
-      ],
-      default: "APPROVED",
-    },
+    distributorApplication: {
+      applied: {
+        type: Boolean,
+        default: false,
+      },
 
-    // ======================================================
-    // AUTH
-    // ======================================================
+      projectedMonthlyVolumePcs: {
+        type: Number,
+        default: null,
+      },
+
+      appliedAt: {
+        type: Date,
+      },
+
+      approvedAt: {
+        type: Date,
+      },
+    },
 
     otp: {
       type: String,
@@ -117,33 +175,9 @@ const userSchema = new mongoose.Schema(
       default: false,
     },
 
-    isBlocked: {
+    mustChangePassword: {
       type: Boolean,
       default: false,
-    },
-
-    // ======================================================
-    // DISTRIBUTOR APPLICATION
-    // ======================================================
-
-    distributorApplication: {
-      applied: {
-        type: Boolean,
-        default: false,
-      },
-
-      projectedMonthlyVolumePcs: {
-        type: Number,
-        default: null,
-      },
-
-      appliedAt: {
-        type: Date,
-      },
-
-      approvedAt: {
-        type: Date,
-      },
     },
   },
   {
@@ -151,4 +185,5 @@ const userSchema = new mongoose.Schema(
   }
 );
 
-module.exports = mongoose.model("User", userSchema);
+module.exports =
+  mongoose.model("User", userSchema);
