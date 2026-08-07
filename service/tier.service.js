@@ -5,15 +5,16 @@ const CustomError = require("../utils/errors/customErrors");
 
 const getBaseTier = (user) => {
 
+    const tier = user?.assignedTier;
+
     if (
-        user.assignedTier &&
-        TIER_ORDER.includes(user.assignedTier)
+        tier &&
+        TIER_ORDER.includes(tier)
     ) {
-        return user.assignedTier;
+        return tier;
     }
 
     return TIERS.RETAILER;
-
 };
 
 

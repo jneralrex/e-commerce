@@ -219,8 +219,7 @@ const getUserCart = async (req, res, next) => {
     // Map through the helper engine
     return res.status(200).json({
       success: true,
-      cart: formatCartResponse(updatedCart)
-    });
+      cart: formatCartResponse(updatedCart, req.user)    });
 
   } catch (error) {
     next(error);
@@ -348,10 +347,7 @@ const updateCartItemQuantity = async (req, res, next) => {
 
       success: true,
 
-      cart: formatCartResponse(
-        updatedCart,
-        req.user
-      )
+     cart: formatCartResponse(updatedCart, req.user)
 
     });
   } catch (error) {
@@ -385,7 +381,7 @@ const removeFromCart = async (req, res, next) => {
     return res.status(200).json({
       success: true,
       message: "Item removed successfully.",
-      cart: formatCartResponse(cart)
+      cart: formatCartResponse(cart, req.user)
     });
 
   } catch (error) {
