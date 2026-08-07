@@ -22,11 +22,9 @@ router.get("/user-orders", authenticate, getMyOrders);
 router.get("/:id", authenticate, getSingleOrder);
 router.put("/:id/cancel", authenticate, cancelOrder);
 
-// Optional user update endpoints
-router.put("/:id/paid", authenticate, markOrderAsPaid);
-router.put("/:id/delivered", authenticate, authorize("admin"), updateOrderStatus);
 
 // ----- Admin routes -----
+router.patch("/admin/update/:id/", authenticate, authorize("admin"), updateOrderStatus);
 router.get("/admin/all", authenticate, authorize("admin"), getAllOrders);
 router.get("/admin/filter", authenticate, authorize("admin"), filterOrders);
 router.put("/admin/:id/cancel", authenticate, authorize("admin"), adminCancelOrder);
