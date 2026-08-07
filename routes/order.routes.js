@@ -6,7 +6,6 @@ const authorize = require("../utils/authorize");
 const {   createOrder,
     getAllOrders,
     getSingleOrder,
-    markOrderAsPaid,
     updateOrderStatus,
     getMyOrders,
     cancelOrder,
@@ -24,16 +23,7 @@ router.put("/:id/cancel", authenticate, cancelOrder);
 
 
 // ----- Admin routes -----
-router.patch(
-  "/admin/update/:id",
-  (req, res, next) => {
-    console.log("PATCH ROUTE HIT");
-    next();
-  },
-  authenticate,
-  authorize("admin"),
-  updateOrderStatus
-);
+router.patch("/admin/update/:id", authenticate, authorize("admin"), updateOrderStatus);
 router.get("/admin/all", authenticate, authorize("admin"), getAllOrders);
 router.get("/admin/filter", authenticate, authorize("admin"), filterOrders);
 router.put("/admin/:id/cancel", authenticate, authorize("admin"), adminCancelOrder);

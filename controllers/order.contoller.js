@@ -375,29 +375,6 @@ const getSingleOrder = async (req, res, next) => {
     }
 };
 
-// const markOrderAsPaid = async (req, res, next) => {
-//     try {
-//         const order = await Order.findById(req.params.id);
-
-//         if (!order) {
-//             throw new CustomError(404, "Order not found");
-//         }
-
-//         order.paymentStatus = "PAID";
-//         order.orderStatus = "PAID";
-//         order.paidAt = new Date();
-
-//         await order.save();
-
-//         res.status(200).json({
-//             success: true,
-//             message: "Payment confirmed.",
-//             order,
-//         });
-//     } catch (error) {
-//         next(error);
-//     }
-// };
 
 const updateOrderStatus = async (req, res, next) => {
     try {
