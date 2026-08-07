@@ -583,7 +583,6 @@ module.exports = {
     createOrder,
     getAllOrders,
     getSingleOrder,
-    markOrderAsPaid,
     updateOrderStatus,
     getMyOrders,
     cancelOrder,

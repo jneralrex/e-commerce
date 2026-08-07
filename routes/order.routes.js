@@ -28,11 +28,5 @@ router.get("/admin/all", authenticate, authorize("admin"), getAllOrders);
 router.get("/admin/filter", authenticate, authorize("admin"), filterOrders);
 router.put("/admin/:id/cancel", authenticate, authorize("admin"), adminCancelOrder);
 router.get("/admin/analytics", authenticate, authorize("admin"), getAnalytics);
-router.get("/admin/update/test", (req, res) => {
-  res.json({
-    success: true,
-    message: "route working",
-  });
-});
 
 module.exports = router;
