@@ -130,11 +130,6 @@ const userSchema = new mongoose.Schema(
       default: null,
     },
 
-    monthlyCommitmentPcs: {
-      type: Number,
-      default: null,
-    },
-
     distributorApplication: {
       applied: {
         type: Boolean,

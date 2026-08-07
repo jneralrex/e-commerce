@@ -244,6 +244,14 @@ const signUp = async (req, res, next) => {
         10
       );
 
+
+      const internalPassword = crypto.randomBytes(32).toString("hex");
+
+      const hashedPassword = await bcrypt.hash(
+          internalPassword,
+          10
+      );
+
     /**
      * ==========================================
      * CREATE USER
@@ -308,8 +316,6 @@ const signUp = async (req, res, next) => {
       territory:
         null,
 
-      projectedMonthlyVolumePcs:
-        0,
 
       estimatedMonthlyOrderVolume:
         estimatedMonthlyOrderVolume?.trim() ||
@@ -985,9 +991,6 @@ const signIn = async (req, res, next) => {
 
         territory:
           user.territory,
-
-        monthlyCommitmentPcs:
-          user.monthlyCommitmentPcs,
 
         estimatedMonthlyOrderVolume:
           user.estimatedMonthlyOrderVolume,
